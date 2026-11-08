@@ -74,6 +74,9 @@ def to_json(result: ScanResult) -> str:
     return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
 
 
+RULES_DOC_URL = "https://github.com/kirtanbhatt10/trustgate/blob/main/docs/rules.md"
+
+
 def to_sarif(result: ScanResult) -> str:
     rule_ids = sorted({f.rule_id for f in result.findings})
     rules = [{
@@ -81,6 +84,7 @@ def to_sarif(result: ScanResult) -> str:
         "name": RULES[rid].name,
         "shortDescription": {"text": RULES[rid].summary},
         "help": {"text": RULES[rid].remediation},
+        "helpUri": RULES_DOC_URL,
         "defaultConfiguration": {"level": SARIF_LEVEL[RULES[rid].severity]},
         "properties": {"security-severity": SECURITY_SEVERITY[RULES[rid].severity],
                        "tags": ["security", "supply-chain"]},

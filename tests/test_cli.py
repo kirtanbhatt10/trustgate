@@ -52,6 +52,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(doc["version"], "2.1.0")
         run_ = doc["runs"][0]
         ids = [r["id"] for r in run_["tool"]["driver"]["rules"]]
+        for rule in run_["tool"]["driver"]["rules"]:
+            self.assertEqual(rule["helpUri"], "https://github.com/kirtanbhatt10/trustgate/blob/main/docs/rules.md")
         for res in run_["results"]:
             self.assertEqual(ids[res["ruleIndex"]], res["ruleId"])
             self.assertIn("trustgate/v1", res["partialFingerprints"])
