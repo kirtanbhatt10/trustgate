@@ -8,7 +8,8 @@ generically, so new events or agents with the same shape are picked up too.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Any, Iterator, Tuple
+import re
+from typing import Any, Iterator, List, Optional, Tuple
 
 from ..models import Severity
 from . import Context, command_text, in_dir
@@ -20,6 +21,12 @@ AGENT_DIRS = (".claude", ".cursor", ".gemini", ".windsurf", ".codeium", ".qwen",
 UNPROMPTED_EVENTS = {"sessionstart", "setup", "sessionend", "stop", "notification", "precompact"}
 
 COMMAND_SETTINGS = ("apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "otelHeadersHelper")
+
+NPM_EXACT_VERSION = re.compile(
+    r"v?[0-9]+\.[0-9]+\.[0-9]+"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
 
 
 def _is_agent_json(p: PurePosixPath) -> bool:
@@ -45,6 +52,62 @@ def _hook_commands(hooks: Any) -> Iterator[Tuple[str, str]]:
                     stack.append(nested)
 
 
+def _first_package_arg(tokens: List[str]) -> Optional[str]:
+    for tok in tokens:
+        if tok.startswith("--package="):
+            return tok.split("=", 1)[1] or None
+        if not tok.startswith("-"):
+            return tok
+    return None
+
+
+def _is_npm_pinned(pkg: str) -> bool:
+    rest = pkg[1:] if pkg.startswith("@") else pkg
+    name, sep, ver = rest.partition("@")
+    return bool(name and sep and NPM_EXACT_VERSION.fullmatch(ver))
+
+
+def _is_uvx_pinned(pkg: str) -> bool:
+    name, sep, ver = pkg.partition("==")
+    if not sep:
+        name, sep, ver = pkg.rpartition("@")
+    # uv accepts concrete Python versions in both forms. Wildcards, version
+    # ranges and moving tags do not select a single version.
+    return bool(name and sep and re.fullmatch(r"v?[0-9][A-Za-z0-9_.!+-]*", ver))
+
+
+def _is_unpinned_mcp(spec: dict) -> bool:
+    raw_cmd = spec.get("command")
+    tokens: List[str] = []
+    if isinstance(raw_cmd, str):
+        tokens.extend(raw_cmd.split())
+    elif isinstance(raw_cmd, list):
+        tokens.extend(str(v) for v in raw_cmd)
+    else:
+        return False
+    raw_args = spec.get("args")
+    if isinstance(raw_args, list):
+        tokens.extend(str(v) for v in raw_args)
+    elif isinstance(raw_args, str):
+        tokens.extend(raw_args.split())
+    if not tokens:
+        return False
+    exe = PurePosixPath(tokens[0]).name
+    rest = tokens[1:]
+    if exe in ("npx", "bunx"):
+        pkg = _first_package_arg(rest)
+        return pkg is not None and not _is_npm_pinned(pkg)
+    if exe == "pnpm":
+        if not rest or rest[0] != "dlx":
+            return False
+        pkg = _first_package_arg(rest[1:])
+        return pkg is not None and not _is_npm_pinned(pkg)
+    if exe == "uvx":
+        pkg = _first_package_arg(rest)
+        return pkg is not None and not _is_uvx_pinned(pkg)
+    return False
+
+
 def _mcp_servers(ctx: Context, rel: str, servers: Any) -> None:
     if not isinstance(servers, dict):
         return
@@ -54,8 +117,13 @@ def _mcp_servers(ctx: Context, rel: str, servers: Any) -> None:
         cmd = command_text(spec["command"])
         if spec.get("args"):
             cmd = f"{cmd} {command_text(spec['args'])}"
-        ctx.add("TG203", rel, f"MCP server '{name}' starts a local process: {cmd}",
-                needle=f'"{name}"', evidence=cmd)
+        if _is_unpinned_mcp(spec):
+            msg = f"MCP server '{name}' starts a local process: {cmd} (unpinned package)"
+            sev: Optional[Severity] = Severity.MEDIUM
+        else:
+            msg = f"MCP server '{name}' starts a local process: {cmd}"
+            sev = None
+        ctx.add("TG203", rel, msg, needle=f'"{name}"', evidence=cmd, severity=sev)
 
 
 def _settings(ctx: Context, rel: str, data: dict) -> None:
