@@ -14,18 +14,22 @@ Every finding has a rule id, a default severity and a fix. Some findings are rai
 | TG202 | `agent-auto-approve` | high | Project settings weaken the agent's approval prompts. | Remove the setting from the project; grant broad permissions only in your own user config. |
 | TG203 | `mcp-server-autostart` | low | A project-level MCP server will be launched as a local process by the agent. | Confirm the server package and arguments are expected and pinned. |
 | TG204 | `agent-env-injection` | high | Agent settings inject environment variables that load code into child processes. | Remove the variable from the agent's env settings. |
+| TG205 | `agent-plugin-enable` | medium | Project settings enable agent plugins or add plugin marketplaces; plugins can bring their own hooks and MCP servers. | Remove enabledPlugins / extraKnownMarketplaces from the project settings and install plugins yourself. |
 | TG300 | `npm-lifecycle-script` | medium | package.json defines a script that npm runs automatically on install. | Install with --ignore-scripts and review the script before running it. |
 | TG301 | `node-gyp-exec` | medium | binding.gyp triggers an implicit install build or runs shell command expansions. | Review every <!( ) expansion; install with --ignore-scripts until reviewed. |
 | TG302 | `npmrc-risk` | medium | A project .npmrc changes how npm executes scripts, where it downloads from, or contains a token. | Remove the setting from the committed .npmrc; keep tokens in your user config or CI secrets. |
+| TG303 | `package-manager-exec` | medium | Package manager config makes yarn, pnpm or bun run JavaScript from the repository on every command or install. | Read the referenced file before running the package manager; remove the setting if you did not expect it. |
 | TG400 | `python-pth-exec` | high | A .pth file contains import lines, which Python executes at interpreter start-up. | Delete the .pth file or reduce it to plain path entries. |
 | TG401 | `setup-py-exec` | medium | setup.py runs commands or fetches code at build/install time. | Build in an isolated environment and review the setup.py code paths. |
 | TG402 | `python-startup-hook` | medium | sitecustomize.py or usercustomize.py is shipped and runs whenever it lands on sys.path. | Remove the file unless the project explicitly documents why it needs it. |
+| TG403 | `python-local-build-backend` | medium | pyproject.toml uses an in-tree build backend (backend-path), so pip runs repository code to build or install. | Read the backend module before running pip install; prefer a published build backend. |
 | TG500 | `devcontainer-host-command` | high | devcontainer initializeCommand runs on your host machine, outside the container. | Review the command; it has full access to your machine. |
 | TG501 | `devcontainer-lifecycle-command` | low | A dev container lifecycle command runs automatically inside the container. | Review the command, especially if secrets or your SSH agent are forwarded. |
 | TG600 | `git-hook-script` | low | A git hook manager will run repository scripts on git operations. | Read the hook scripts before running the project's install or setup step. |
 | TG601 | `direnv-envrc` | medium | An .envrc file runs shell code when you cd into the directory (once allowed). | Read the file before running 'direnv allow'. |
 | TG700 | `workflow-secret-dump` | critical | A GitHub Actions workflow serialises the entire secrets context. | Delete the workflow and rotate every repository and organisation secret. |
 | TG701 | `workflow-untrusted-exec` | high | A workflow interpolates attacker-controlled event text directly into a shell step. | Pass the value through an environment variable and never execute it. |
+| TG800 | `gradle-wrapper-distribution` | medium | The Gradle wrapper downloads Gradle from a non-official location; IDEs run it when the project is imported. | Point distributionUrl at https://services.gradle.org/distributions/ and add distributionSha256Sum. |
 
 ## Severity adjustments
 
@@ -36,6 +40,30 @@ Every finding has a rule id, a default severity and a fix. Some findings are rai
 - **TG300**: `preinstall`, `install` and `postinstall` are `medium`; `prepare`-family and `prepublish` scripts are `low`.
 - **TG301**: a `binding.gyp` with no command expansions only triggers the implicit `node-gyp rebuild` and is `low`.
 - **TG302**: literal auth tokens are `high`; a custom registry is `low`.
+- **TG303**: a `yarnPath` inside `.yarn/releases/` (the normal Yarn Berry setup) is `low`.
+- **TG800**: a plain `http://` distribution URL with no `distributionSha256Sum` is `high`.
+
+## Agent instruction files
+
+`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`,
+`.github/copilot-instructions.md` and the Markdown files under `.cursor/rules/`,
+`.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `.github/instructions/`,
+`.github/prompts/` and `.windsurf/rules/` do not run code, but coding agents read and obey
+them. trustgate checks them for hidden Unicode only (TG001), which is how instructions are
+smuggled past a human reviewer.
+
+## Accepting reviewed findings
+
+```sh
+trustgate baseline . -o .trustgate-baseline.json   # record what you have reviewed
+trustgate scan . --baseline .trustgate-baseline.json  # report only what is new
+```
+
+A fingerprint covers the rule, the file and the configured command, not the line number,
+so moving a script inside `package.json` keeps it accepted while changing the command
+reopens it. A baseline is a file in your repository, so treat changes to it like changes
+to code: in CI, read it from the base branch rather than from the pull request (see the
+README).
 
 ## Disabling a rule
 
