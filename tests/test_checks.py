@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from trustgate.models import Severity
 from trustgate.scanner import scan
@@ -84,6 +85,111 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(sorted(rules_of(result)), ["TG200", "TG203"])
         mcp = [f for f in result.findings if f.rule_id == "TG203"][0]
         self.assertIn("npx -y some-server@1.2.3", mcp.message)
+
+    def _mcp_finding(self, command, args):
+        config = {"mcpServers": {"demo": {"command": command, "args": args}}}
+        with TempRepo({".mcp.json": config}) as root:
+            result = scan(str(root))
+        findings = [f for f in result.findings if f.rule_id == "TG203"]
+        self.assertEqual(len(findings), 1)
+        self.assertFalse(result.errors)
+        return findings[0]
+
+    def _assert_mcp_unpinned(self, command, args):
+        finding = self._mcp_finding(command, args)
+        self.assertEqual(finding.severity, Severity.MEDIUM)
+        message = finding.message.lower()
+        self.assertTrue("not pinned" in message or "unpinned" in message)
+        return finding
+
+    def _assert_mcp_low(self, command, args):
+        finding = self._mcp_finding(command, args)
+        self.assertEqual(finding.severity, Severity.LOW)
+        self.assertNotIn("not pinned", finding.message.lower())
+        self.assertNotIn("unpinned", finding.message.lower())
+        return finding
+
+    def test_mcp_npx_without_version(self):
+        self._assert_mcp_unpinned("npx", ["-y", "example-mcp-server"])
+
+    def test_mcp_npx_moving_tags(self):
+        for tag in ("latest", "next"):
+            with self.subTest(tag=tag):
+                self._assert_mcp_unpinned("npx", ["-y", "example-mcp-server@" + tag])
+
+    def test_mcp_scoped_packages_and_pins(self):
+        self._assert_mcp_unpinned("npx", ["-y", "@example/mcp-server"])
+        self._assert_mcp_unpinned("npx", ["-y", "@example/mcp-server@latest"])
+        self._assert_mcp_low("npx", ["-y", "@example/mcp-server@2.0.0"])
+
+    def test_mcp_exact_pin_keeps_original_finding(self):
+        finding = self._assert_mcp_low("npx", ["-y", "example-mcp-server@1.2.3"])
+        self.assertEqual(finding.message,
+                         "MCP server 'demo' starts a local process: npx -y example-mcp-server@1.2.3")
+        self.assertEqual(finding.evidence, "npx -y example-mcp-server@1.2.3")
+        self.assertEqual(finding.path, ".mcp.json")
+
+    def test_mcp_pnpm_dlx(self):
+        self._assert_mcp_unpinned("pnpm", ["dlx", "example-mcp-server"])
+        self._assert_mcp_unpinned("pnpm", ["dlx", "@example/mcp-server@next"])
+        self._assert_mcp_low("pnpm", ["dlx", "example-mcp-server@1.2.3"])
+
+    def test_mcp_bunx(self):
+        self._assert_mcp_unpinned("bunx", ["example-mcp-server"])
+        self._assert_mcp_unpinned("bunx", ["example-mcp-server@latest"])
+        self._assert_mcp_low("bunx", ["@example/mcp-server@1.2.3"])
+
+    def test_mcp_uvx(self):
+        self._assert_mcp_unpinned("uvx", ["example-mcp-server"])
+        self._assert_mcp_low("uvx", ["example-mcp-server==0.4.1"])
+
+    def test_mcp_later_arguments_do_not_pin_the_package(self):
+        self._assert_mcp_unpinned("npx", ["-y", "example-mcp-server", "--label", "other@1.2.3"])
+
+    def test_mcp_non_launcher_commands_are_unchanged(self):
+        self._assert_mcp_low("python", ["server.py"])
+        self._assert_mcp_low("node", ["server.js"])
+        self._assert_mcp_low("./server", ["--version", "1.2.3"])
+
+    def test_mcp_other_pnpm_commands_are_unchanged(self):
+        self._assert_mcp_low("pnpm", ["exec", "local-server"])
+
+    def test_mcp_remote_servers_are_unchanged(self):
+        with TempRepo({".mcp.json": {"mcpServers": {
+            "remote": {"type": "http", "url": "https://example.com/mcp"}
+        }}}) as root:
+            result = scan(str(root))
+        self.assertFalse([f for f in result.findings if f.rule_id == "TG203"])
+        self.assertFalse(result.errors)
+
+    def test_mcp_commands_are_never_executed(self):
+        with mock.patch("subprocess.run", side_effect=AssertionError("command execution forbidden")), \
+             mock.patch("subprocess.Popen", side_effect=AssertionError("command execution forbidden")), \
+             mock.patch("os.system", side_effect=AssertionError("command execution forbidden")):
+            self._assert_mcp_unpinned("npx", ["-y", "example-mcp-server@latest"])
+
+    def test_mcp_version_ranges_and_moving_tags(self):
+        for command, package in (
+            ("npx", "example-mcp-server@^1.2.3"),
+            ("npx", "example-mcp-server@~1.2.3"),
+            ("npx", "@example/mcp-server@1.x"),
+            ("npx", "example-mcp-server@beta"),
+            ("bunx", "example-mcp-server@>=1.0.0"),
+            ("uvx", "example-mcp-server==1.2.*"),
+        ):
+            with self.subTest(command=command, package=package):
+                self._assert_mcp_unpinned(command, [package])
+
+    def test_mcp_exact_version_variants(self):
+        for command, package in (
+            ("npx", "example-mcp-server@1.2.3-rc.1"),
+            ("bunx", "@example/mcp-server@1.2.3+build.2"),
+            ("uvx", "example-mcp-server@0.4.1"),
+            ("uvx", "example-mcp-server==1.2rc1"),
+            ("uvx", "example-mcp-server==1.2.post1"),
+        ):
+            with self.subTest(command=command, package=package):
+                self._assert_mcp_low(command, [package])
 
 
 class NodeTests(unittest.TestCase):
