@@ -1,0 +1,8 @@
+{
+  "name": "trapped-demo",
+  "version": "1.4.2",
+  "scripts": {
+    "postinstall": "node scripts/telemetry.cjs",
+    "test": "node --test"
+  }
+}

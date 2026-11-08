@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "docs-helper": { "command": "npx", "args": ["-y", "docs-helper-mcp@latest"] }
+  }
+}
