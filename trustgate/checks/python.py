@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from typing import Optional
 
 from . import Context
@@ -16,6 +17,8 @@ RISKY_CALLS = {
     "requests.get", "requests.post", "http.client.HTTPConnection", "http.client.HTTPSConnection",
     "socket.socket", "socket.create_connection",
 }
+TOML_TABLE = re.compile(r"^\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$")
+TOML_KEY = re.compile(r"^\s*(backend-path|build-backend)\s*=\s*(.+?)\s*$")
 INSTALL_COMMANDS = {"install", "develop", "egg_info", "build_py", "build_ext", "bdist_wheel", "sdist"}
 
 
@@ -66,6 +69,30 @@ def _pth(ctx: Context, rel: str) -> None:
                     line=lineno, evidence=line.strip())
 
 
+def _pyproject(ctx: Context, rel: str) -> None:
+    """Find [build-system] backend-path without a TOML parser (tomllib needs Python 3.11)."""
+    text = ctx.text(rel)
+    if text is None:
+        return
+    table, backend, path_line, path_value = "", "", 0, ""
+    for lineno, line in enumerate(text.splitlines(), 1):
+        m = TOML_TABLE.match(line)
+        if m:
+            table = m.group(1)
+            continue
+        if table != "build-system":
+            continue
+        m = TOML_KEY.match(line)
+        if m and m.group(1) == "build-backend":
+            backend = m.group(2).strip("'\"")
+        elif m:
+            path_line, path_value = lineno, m.group(2)
+    if path_line:
+        name = f"'{backend}' " if backend else ""
+        ctx.add("TG403", rel, f"build backend {name}is loaded from the repository (backend-path = {path_value}).",
+                line=path_line, evidence=f"{backend} {path_value}".strip())
+
+
 def check(ctx: Context) -> None:
     for rel in ctx.matching(lambda p: p.suffix == ".pth"):
         _pth(ctx, rel)
@@ -73,3 +100,5 @@ def check(ctx: Context) -> None:
         ctx.add("TG402", rel, f"{rel.rsplit('/', 1)[-1]} is imported automatically by Python when it is on sys.path.")
     for rel in ctx.matching(lambda p: p.name == "setup.py"):
         _setup_py(ctx, rel)
+    for rel in ctx.matching(lambda p: p.name == "pyproject.toml"):
+        _pyproject(ctx, rel)

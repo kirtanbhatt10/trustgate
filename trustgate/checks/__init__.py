@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, List, Optional
 
 from ..models import Finding, Severity
-from ..textutil import line_of, load_jsonc, read_text, shorten
+from ..textutil import line_of, load_jsonc, printable, read_text, shorten
 
 
 @dataclass
@@ -44,7 +44,7 @@ class Context:
             evidence: str = "", severity: Optional[Severity] = None, line: int = 0) -> None:
         if not line:
             line = locate(self.text(rel) or "", needle)
-        self.findings.append(Finding(rule_id, rel, message, line=line,
+        self.findings.append(Finding(rule_id, printable(rel), printable(" ".join(message.split())), line=line,
                                      severity=severity, evidence=shorten(evidence)))
 
 

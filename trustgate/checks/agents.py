@@ -92,6 +92,35 @@ def _settings(ctx: Context, rel: str, data: dict) -> None:
                 ctx.add("TG202", rel, f"permissions.allow contains '{entry}': any shell command runs unprompted.",
                         needle=entry)
     _mcp_servers(ctx, rel, data.get("mcpServers"))
+    _plugins(ctx, rel, data)
+
+
+def _marketplace_source(spec: Any) -> str:
+    source = spec.get("source") if isinstance(spec, dict) else None
+    if isinstance(source, dict):
+        for key in ("repo", "url", "path", "package"):
+            if isinstance(source.get(key), str) and source[key]:
+                return source[key]
+    return command_text(source) if source else "(unknown source)"
+
+
+def _plugins(ctx: Context, rel: str, data: dict) -> None:
+    markets = data.get("extraKnownMarketplaces")
+    if isinstance(markets, dict):
+        for name, spec in markets.items():
+            src = _marketplace_source(spec)
+            ctx.add("TG205", rel, f"Adds plugin marketplace '{name}' from {src}.", needle=f'"{name}"', evidence=src)
+    enabled = data.get("enabledPlugins")
+    if isinstance(enabled, dict):
+        for name, on in enabled.items():
+            if on is True:
+                ctx.add("TG205", rel, f"Enables plugin '{name}' for everyone who opens the project.",
+                        needle=f'"{name}"', evidence=str(name))
+    elif isinstance(enabled, list):
+        for name in enabled:
+            if isinstance(name, str):
+                ctx.add("TG205", rel, f"Enables plugin '{name}' for everyone who opens the project.",
+                        needle=f'"{name}"', evidence=name)
 
 
 def check(ctx: Context) -> None:

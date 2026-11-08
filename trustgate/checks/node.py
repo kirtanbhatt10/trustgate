@@ -1,4 +1,4 @@
-"""npm / Node.js: install-time lifecycle scripts, node-gyp and .npmrc."""
+"""npm / Node.js: install-time lifecycle scripts, node-gyp, .npmrc and yarn / pnpm / bun config."""
 
 from __future__ import annotations
 
@@ -21,6 +21,11 @@ INSTALL_SCRIPTS = {
 GYP_EXPANSION = re.compile(r"<!@?\(")
 NPMRC_KEY = re.compile(r"^\s*([^=#;\s][^=]*?)\s*=\s*(.*?)\s*$")
 DEFAULT_REGISTRY = re.compile(r"^https://registry\.(npmjs\.org|yarnpkg\.com)/?$")
+YARN_PATH = re.compile(r"^yarnPath:\s*['\"]?(.+?)['\"]?\s*$")
+YARN_PLUGIN_PATH = re.compile(r"^\s+(?:-\s+)?path:\s*['\"]?(.+?)['\"]?\s*$")
+YARN_PLUGIN_BARE = re.compile(r"^\s+-\s+(?!path:|spec:)['\"]?(.+?)['\"]?\s*$")
+YARN1_PATH = re.compile(r"^\s*yarn-path\s+['\"]?(.+?)['\"]?\s*$")
+BUN_PRELOAD = re.compile(r"^\s*preload\s*=\s*(.+?)\s*$")
 
 
 def _package_json(ctx: Context, rel: str) -> None:
@@ -74,6 +79,46 @@ def _npmrc(ctx: Context, rel: str) -> None:
                     severity=Severity.LOW, evidence=value)
 
 
+def _yarnrc_yml(ctx: Context, rel: str) -> None:
+    text = ctx.text(rel)
+    if text is None:
+        return
+    in_plugins = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            in_plugins = line.split(":", 1)[0].strip() == "plugins"
+            m = YARN_PATH.match(line)
+            if m:
+                target = m.group(1)
+                sev = Severity.LOW if target.removeprefix("./").startswith(".yarn/releases/") else Severity.MEDIUM
+                ctx.add("TG303", rel, f"yarnPath makes every yarn command run {target}", line=lineno,
+                        severity=sev, evidence=target)
+            continue
+        if in_plugins:
+            m = YARN_PLUGIN_PATH.match(line) or YARN_PLUGIN_BARE.match(line)
+            if m:
+                ctx.add("TG303", rel, f"yarn loads plugin code on every command: {m.group(1)}", line=lineno,
+                        evidence=m.group(1))
+
+
+def _yarnrc_v1(ctx: Context, rel: str) -> None:
+    for lineno, line in enumerate((ctx.text(rel) or "").splitlines(), 1):
+        m = YARN1_PATH.match(line)
+        if m:
+            ctx.add("TG303", rel, f"yarn-path makes every yarn command run {m.group(1)}", line=lineno,
+                    evidence=m.group(1))
+
+
+def _bunfig(ctx: Context, rel: str) -> None:
+    for lineno, line in enumerate((ctx.text(rel) or "").splitlines(), 1):
+        m = BUN_PRELOAD.match(line)
+        if m:
+            ctx.add("TG303", rel, f"bun preloads these scripts before running code or tests: {m.group(1)}",
+                    line=lineno, evidence=m.group(1))
+
+
 def check(ctx: Context) -> None:
     for rel in ctx.matching(lambda p: p.name == "package.json"):
         _package_json(ctx, rel)
@@ -81,3 +126,11 @@ def check(ctx: Context) -> None:
         _binding_gyp(ctx, rel)
     for rel in ctx.matching(lambda p: p.name == ".npmrc"):
         _npmrc(ctx, rel)
+    for rel in ctx.matching(lambda p: p.name == ".yarnrc.yml"):
+        _yarnrc_yml(ctx, rel)
+    for rel in ctx.matching(lambda p: p.name == ".yarnrc"):
+        _yarnrc_v1(ctx, rel)
+    for rel in ctx.matching(lambda p: p.name == ".pnpmfile.cjs"):
+        ctx.add("TG303", rel, "pnpm runs the hooks in .pnpmfile.cjs on every install.", line=1)
+    for rel in ctx.matching(lambda p: p.name == "bunfig.toml"):
+        _bunfig(ctx, rel)
