@@ -68,6 +68,20 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("TG500", out)
 
+    def test_rules_explain_one(self):
+        code, out = run(["rules", "TG100"])
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("TG100  vscode-folder-open-task  (default severity: high)\n"))
+        self.assertIn("Fix: Delete the task", out)
+        self.assertIn("Docs: https://github.com/kirtanbhatt10/trustgate/blob/main/docs/rules.md", out)
+        self.assertNotIn("TG500", out)
+
+    def test_rules_explain_lower_case(self):
+        self.assertEqual(run(["rules", "tg100"]), run(["rules", "TG100"]))
+
+    def test_rules_explain_unknown(self):
+        self.assertEqual(run(["rules", "TG999"])[0], 2)
+
     def test_home_scan(self):
         files = {".claude/settings.json": {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}]}},
                  ".config/Code/User/settings.json": {"terminal.integrated.env.linux": {"BASH_ENV": "/tmp/x"}}}

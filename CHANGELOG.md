@@ -6,6 +6,11 @@ All notable changes are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `trustgate rules TG100` explains a single rule: name, default severity, fix and a link to the docs.
+  Lower-case ids work too; an unknown id exits with code 2.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

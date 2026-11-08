@@ -53,6 +53,7 @@ trustgate scan . -f json --min-severity medium
 trustgate baseline                   # accept today's findings ...
 trustgate scan --baseline .trustgate-baseline.json   # ... and report only new ones
 trustgate rules                      # list every rule
+trustgate rules TG100                # explain one rule and how to fix it
 ```
 
 | Option | Default | Meaning |

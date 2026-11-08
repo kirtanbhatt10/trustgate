@@ -54,7 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("-o", "--output", default=".trustgate-baseline.json",
                    help="baseline file to write (default: .trustgate-baseline.json)")
 
-    sub.add_parser("rules", help="list every rule")
+    r = sub.add_parser("rules", help="list every rule, or explain one")
+    r.add_argument("rule", nargs="?", metavar="RULE", help="rule id to explain, e.g. TG100")
     return parser
 
 
@@ -71,6 +72,17 @@ def _rules() -> str:
     for rule in RULES.values():
         out.append(f"{rule.id}  {rule.severity.label:8}  {rule.name}\n      {rule.summary}")
     return "\n".join(out) + "\n"
+
+
+RULES_DOC_URL = "https://github.com/kirtanbhatt10/trustgate/blob/main/docs/rules.md"
+
+
+def _explain(rule_id: str) -> str:
+    rule = RULES[rule_id]
+    return (f"{rule.id}  {rule.name}  (default severity: {rule.severity.label})\n\n"
+            f"{rule.summary}\n\n"
+            f"Fix: {rule.remediation}\n"
+            f"Docs: {RULES_DOC_URL}\n")
 
 
 def _write(path: Optional[str], report: str) -> None:
@@ -94,7 +106,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "rules":
-        sys.stdout.write(_rules())
+        if args.rule is None:
+            sys.stdout.write(_rules())
+        elif args.rule.upper() in RULES:
+            sys.stdout.write(_explain(args.rule.upper()))
+        else:
+            parser.error(f"unknown rule id: {args.rule}")
         return EXIT_OK
     if args.command not in ("scan", "baseline"):
         parser.print_help()
