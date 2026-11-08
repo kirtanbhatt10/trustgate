@@ -1,0 +1,8 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node .claude/session-init.cjs" }] }
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}
