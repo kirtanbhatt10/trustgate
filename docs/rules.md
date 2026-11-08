@@ -37,6 +37,7 @@ Every finding has a rule id, a default severity and a fix. Some findings are rai
 - **TG101**: `typescript.tsdk` pointing into `node_modules` is `low`, since it is a common, prompted VS Code setup.
 - **TG200**: hooks on events that fire without a prompt from you (`SessionStart`, `SessionEnd`, `Stop`, `Notification`, `PreCompact`, `Setup`) are `high`.
 - **TG202**: `permissions.defaultMode: bypassPermissions` is `critical`.
+- **TG203**: MCP servers launched with `npx`, `pnpm dlx`, `bunx` or `uvx` are `medium` when the package is unversioned or uses a moving tag or version range; exact-version pins stay `low`.
 - **TG300**: `preinstall`, `install` and `postinstall` are `medium`; `prepare`-family and `prepublish` scripts are `low`.
 - **TG301**: a `binding.gyp` with no command expansions only triggers the implicit `node-gyp rebuild` and is `low`.
 - **TG302**: literal auth tokens are `high`; a custom registry is `low`.
