@@ -1,0 +1,30 @@
+name: New auto-run location
+description: An editor, agent, package manager or build tool runs repository code that trustgate does not check yet.
+labels: [enhancement]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool and version
+      placeholder: Zed 0.160, pnpm 10, JetBrains IDEs 2026.2 ...
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: File and setting
+      description: Which file, which key, and a minimal example.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: when
+    attributes:
+      label: When does it run, and is there a prompt first?
+      description: For example "on folder open, after Workspace Trust" or "on every `yarn` command, no prompt".
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: Documentation link

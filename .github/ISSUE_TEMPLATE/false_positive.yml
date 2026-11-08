@@ -1,0 +1,25 @@
+name: False positive or wrong severity
+description: trustgate flagged something that does not run automatically, or rated it too high or low.
+labels: [bug]
+body:
+  - type: input
+    id: rule
+    attributes:
+      label: Rule id
+      placeholder: TG300
+    validations:
+      required: true
+  - type: textarea
+    id: content
+    attributes:
+      label: File path and the relevant lines
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is wrong
+      description: Link to the tool's documentation if it shows the setting does not auto-run.
+    validations:
+      required: true
