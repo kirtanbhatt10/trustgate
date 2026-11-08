@@ -77,6 +77,9 @@ _rule("TG203", "mcp-server-autostart", Severity.LOW,
 _rule("TG204", "agent-env-injection", Severity.HIGH,
       "Agent settings inject environment variables that load code into child processes.",
       "Remove the variable from the agent's env settings.")
+_rule("TG205", "agent-plugin-enable", Severity.MEDIUM,
+      "Project settings enable agent plugins or add plugin marketplaces; plugins can bring their own hooks and MCP servers.",
+      "Remove enabledPlugins / extraKnownMarketplaces from the project settings and install plugins yourself.")
 _rule("TG300", "npm-lifecycle-script", Severity.MEDIUM,
       "package.json defines a script that npm runs automatically on install.",
       "Install with --ignore-scripts and review the script before running it.")
@@ -86,6 +89,9 @@ _rule("TG301", "node-gyp-exec", Severity.MEDIUM,
 _rule("TG302", "npmrc-risk", Severity.MEDIUM,
       "A project .npmrc changes how npm executes scripts, where it downloads from, or contains a token.",
       "Remove the setting from the committed .npmrc; keep tokens in your user config or CI secrets.")
+_rule("TG303", "package-manager-exec", Severity.MEDIUM,
+      "Package manager config makes yarn, pnpm or bun run JavaScript from the repository on every command or install.",
+      "Read the referenced file before running the package manager; remove the setting if you did not expect it.")
 _rule("TG400", "python-pth-exec", Severity.HIGH,
       "A .pth file contains import lines, which Python executes at interpreter start-up.",
       "Delete the .pth file or reduce it to plain path entries.")
@@ -95,6 +101,9 @@ _rule("TG401", "setup-py-exec", Severity.MEDIUM,
 _rule("TG402", "python-startup-hook", Severity.MEDIUM,
       "sitecustomize.py or usercustomize.py is shipped and runs whenever it lands on sys.path.",
       "Remove the file unless the project explicitly documents why it needs it.")
+_rule("TG403", "python-local-build-backend", Severity.MEDIUM,
+      "pyproject.toml uses an in-tree build backend (backend-path), so pip runs repository code to build or install.",
+      "Read the backend module before running pip install; prefer a published build backend.")
 _rule("TG500", "devcontainer-host-command", Severity.HIGH,
       "devcontainer initializeCommand runs on your host machine, outside the container.",
       "Review the command; it has full access to your machine.")
@@ -113,6 +122,9 @@ _rule("TG700", "workflow-secret-dump", Severity.CRITICAL,
 _rule("TG701", "workflow-untrusted-exec", Severity.HIGH,
       "A workflow interpolates attacker-controlled event text directly into a shell step.",
       "Pass the value through an environment variable and never execute it.")
+_rule("TG800", "gradle-wrapper-distribution", Severity.MEDIUM,
+      "The Gradle wrapper downloads Gradle from a non-official location; IDEs run it when the project is imported.",
+      "Point distributionUrl at https://services.gradle.org/distributions/ and add distributionSha256Sum.")
 
 
 @dataclass

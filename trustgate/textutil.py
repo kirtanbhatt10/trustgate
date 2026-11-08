@@ -109,6 +109,23 @@ def line_of(text: str, needle: str, default: int = 1) -> int:
     return text.count("\n", 0, idx) + 1
 
 
+def _unsafe(cp: int) -> bool:
+    return (cp < 0x20 or 0x7F <= cp <= 0x9F or 0x200B <= cp <= 0x200F or 0x202A <= cp <= 0x202E
+            or 0x2060 <= cp <= 0x2069 or cp == 0xFEFF or 0xE0000 <= cp <= 0xE007F)
+
+
+def printable(value: str) -> str:
+    """Make repository-controlled text safe to print.
+
+    Terminal escape sequences, control characters and invisible or direction-changing
+    Unicode are shown as \\uXXXX so a crafted command cannot rewrite or hide other
+    output lines (for example with ESC[2K or a right-to-left override).
+    """
+    if not any(_unsafe(ord(c)) for c in value):
+        return value
+    return "".join(f"\\u{ord(c):04x}" if _unsafe(ord(c)) else c for c in value)
+
+
 def shorten(value: str, limit: int = 160) -> str:
-    value = " ".join(value.split())
+    value = printable(" ".join(value.split()))
     return value if len(value) <= limit else value[: limit - 3] + "..."

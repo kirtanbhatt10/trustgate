@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Iterable, List, Optional, Sequence
 
-from .checks import Context, agents, devcontainer, hooks, node, python, vscode, workflows
+from .checks import Context, agents, build, devcontainer, hooks, node, python, vscode, workflows
 from .models import Finding, Severity
 from .unicode import find_hidden
 
-CHECKS = (vscode, agents, node, python, devcontainer, hooks, workflows)
+CHECKS = (vscode, agents, node, python, devcontainer, hooks, workflows, build)
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".tox", ".nox",
              ".mypy_cache", ".pytest_cache", ".ruff_cache", ".gradle", ".terraform", ".next", ".cache"}
@@ -22,6 +23,19 @@ AUTORUN_NAMES = {
     ".claude.json", "package.json", "binding.gyp", ".npmrc", "setup.py", "sitecustomize.py",
     "usercustomize.py", "devcontainer.json", ".devcontainer.json", ".pre-commit-config.yaml",
     ".pre-commit-config.yml", ".envrc", "lefthook.yml", "lefthook.yaml", ".lefthook.yml", ".lefthook.yaml",
+    "lefthook-local.yml", "lefthook-local.yaml", ".yarnrc.yml", ".yarnrc", ".pnpmfile.cjs", "bunfig.toml",
+    "pyproject.toml", "gradle-wrapper.properties",
+}
+
+# Instruction files that AI coding agents read and follow. They do not run code, so they are
+# only checked for hidden Unicode (TG001), the usual way to smuggle instructions past review.
+INSTRUCTION_NAMES = {
+    "CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "AGENT.md", "GEMINI.md", ".cursorrules",
+    ".windsurfrules", ".clinerules", "copilot-instructions.md",
+}
+INSTRUCTION_DIRS = {
+    (".cursor", "rules"), (".claude", "commands"), (".claude", "agents"), (".claude", "skills"),
+    (".github", "instructions"), (".github", "prompts"), (".windsurf", "rules"), (".clinerules",),
 }
 
 # User-level files worth checking after a suspected compromise (relative to $HOME).
@@ -42,6 +56,7 @@ class ScanResult:
     findings: List[Finding] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     files_scanned: int = 0
+    baselined: int = 0
 
     def at_least(self, severity: Severity) -> List[Finding]:
         return [f for f in self.findings if f.severity >= severity]
@@ -52,7 +67,18 @@ GENERIC_NAMES = {"tasks.json", "settings.json", "settings.local.json", "hooks.js
 GENERIC_PARENTS = {".vscode", "User", *agents.AGENT_DIRS}
 
 
+def is_instruction_file(p: PurePosixPath) -> bool:
+    if p.name in INSTRUCTION_NAMES:
+        return True
+    if p.suffix not in (".md", ".mdc", ".txt"):
+        return False
+    dirs = p.parts[:-1]
+    return any(tuple(dirs[i:i + len(d)]) == d for d in INSTRUCTION_DIRS for i in range(len(dirs)))
+
+
 def _autorun_file(p: PurePosixPath) -> bool:
+    if is_instruction_file(p):
+        return True
     if p.name in GENERIC_NAMES:
         return len(p.parts) >= 2 and p.parts[-2] in GENERIC_PARENTS
     if p.name in AUTORUN_NAMES or p.suffix in (".pth", ".code-workspace"):
@@ -62,16 +88,33 @@ def _autorun_file(p: PurePosixPath) -> bool:
     return False
 
 
-def walk(root: Path, include_deps: bool = False) -> List[str]:
+def excluded(rel: str, patterns: Sequence[str]) -> bool:
+    """True if rel (a POSIX path) or one of its parent directories matches a glob pattern."""
+    if not patterns:
+        return False
+    parts = rel.split("/")
+    prefixes = ["/".join(parts[:i]) for i in range(1, len(parts) + 1)]
+    for pattern in patterns:
+        pat = pattern.replace("\\", "/").strip("/")
+        if pat.startswith("./"):
+            pat = pat[2:]
+        if any(fnmatch.fnmatchcase(prefix, pat) for prefix in prefixes):
+            return True
+    return False
+
+
+def walk(root: Path, include_deps: bool = False, exclude: Sequence[str] = ()) -> List[str]:
     skip = SKIP_DIRS - ({"node_modules"} if include_deps else set())
     found: List[str] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(d for d in dirnames if d not in skip)
         rel_dir = Path(dirpath).relative_to(root)
+        dirnames[:] = sorted(d for d in dirnames if d not in skip
+                             and not excluded(PurePosixPath(*rel_dir.parts, d).as_posix(), exclude))
         for name in sorted(filenames):
             rel = PurePosixPath(*(rel_dir.parts + (name,)))
-            if _autorun_file(rel) and not (root / rel_dir / name).is_symlink():
-                found.append(str(rel))
+            if (_autorun_file(rel) and not excluded(rel.as_posix(), exclude)
+                    and not (root / rel_dir / name).is_symlink()):
+                found.append(rel.as_posix())
     return found
 
 
@@ -82,16 +125,17 @@ def _unicode(ctx: Context) -> None:
             continue
         for run in find_hidden(text):
             sev = {"tags": Severity.CRITICAL, "bidi": Severity.HIGH, "zero-width": Severity.MEDIUM}[run.kind]
-            ctx.add("TG001", rel, f"{run.count} hidden {run.kind} character(s) at column {run.column}: {run.detail}",
+            label = {"tags": "tag"}.get(run.kind, run.kind)
+            ctx.add("TG001", rel, f"{run.count} hidden {label} character(s) at column {run.column}: {run.detail}",
                     line=run.line, severity=sev, evidence=run.detail)
 
 
 def scan(path: str, *, include_deps: bool = False, files: Optional[Sequence[str]] = None,
-         ignore: Iterable[str] = ()) -> ScanResult:
+         ignore: Iterable[str] = (), exclude: Sequence[str] = ()) -> ScanResult:
     root = Path(path).resolve()
     if not root.is_dir():
         raise NotADirectoryError(f"not a directory: {path}")
-    rels = list(files) if files is not None else walk(root, include_deps)
+    rels = list(files) if files is not None else walk(root, include_deps, exclude)
     ctx = Context(root=root, files=rels)
     for module in CHECKS:
         module.check(ctx)
