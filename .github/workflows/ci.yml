@@ -31,8 +31,59 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -t tests -v
       - name: Scan this repository with itself
-        run: python -m trustgate scan . --fail-on medium
+        run: python -m trustgate scan . --fail-on medium --exclude tests/fixtures
       - name: Install and run the console script
         run: |
           python -m pip install .
           trustgate --version
+
+  action:
+    name: action (self-test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Clean repository passes
+        uses: ./
+        with:
+          fail-on: medium
+          exclude: tests/fixtures
+          sarif-file: ""
+      - name: Booby-trapped repository fails
+        id: trapped
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/fixtures/trapped
+          sarif-file: trapped.sarif
+          job-summary: "false"
+      - name: Check the trapped scan failed and reported findings
+        env:
+          OUTCOME: ${{ steps.trapped.outcome }}
+          FINDINGS: ${{ steps.trapped.outputs.findings }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$FINDINGS" -ge 5
+          python -c "import json; d = json.load(open('trapped.sarif')); assert d['runs'][0]['results']"
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Smoke-test the wheel
+        run: |
+          python -m pip install dist/*.whl
+          trustgate rules > /dev/null
+          rc=0; trustgate scan tests/fixtures/trapped --no-color || rc=$?
+          test "$rc" -eq 1
