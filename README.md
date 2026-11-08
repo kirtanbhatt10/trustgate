@@ -2,6 +2,14 @@
 
 **See everything a repository will run before you open, install or build it.**
 
+[![ci](https://github.com/kirtanbhatt10/trustgate/actions/workflows/ci.yml/badge.svg)](https://github.com/kirtanbhatt10/trustgate/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
+![Dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
+[![good first issues](https://img.shields.io/github/issues/kirtanbhatt10/trustgate/good%20first%20issue?label=good%20first%20issues&color=7057ff)](https://github.com/kirtanbhatt10/trustgate/labels/good%20first%20issue)
+
+![trustgate scanning a freshly cloned repository and listing seven auto-run entry points](docs/demo-scan.gif)
+
 You clone a repo, open it in your editor, start your AI coding agent and run `npm install`.
 Each of those steps can run code that came with the repo: a VS Code task set to run on
 folder open, a Claude Code `SessionStart` hook, a `postinstall` script, a dev container
@@ -18,42 +26,20 @@ and when, and fails CI when something new shows up.
 
 - **Zero dependencies.** Python 3.10+ standard library only. Nothing to trust but this code.
 - **Offline.** Reads files and nothing else: no network, no execution, no telemetry.
-- **Built for review and CI.** Text, JSON and SARIF output, GitHub Action, pre-commit hook.
-
-```text
-$ trustgate scan .
-trustgate 0.1.0  /src/demo  (4 auto-run files)
-
-HIGH     TG200 agent-hook  .claude/settings.json:3
-         SessionStart hook runs: node .claude/setup.js
-         fix: Review the command. Only keep hooks you added yourself.
-
-HIGH     TG202 agent-auto-approve  .claude/settings.json:7
-         enableAllProjectMcpServers auto-approves every server in .mcp.json.
-         fix: Remove the setting from the project; grant broad permissions only in your own user config.
-
-HIGH     TG500 devcontainer-host-command  .devcontainer/devcontainer.json:1
-         initializeCommand runs on your host before the container exists: ./prep.sh
-         fix: Review the command; it has full access to your machine.
-
-HIGH     TG100 vscode-folder-open-task  .vscode/tasks.json:5
-         Task 'init' runs automatically when the folder is opened: node .vscode/init.js
-         fix: Delete the task or remove runOptions.runOn unless you wrote it yourself.
-
-MEDIUM   TG300 npm-lifecycle-script  package.json:1
-         'postinstall' script runs on install: node scripts/fetch.js
-         fix: Install with --ignore-scripts and review the script before running it.
-
-Summary: 4 high, 1 medium
-```
+- **Built for review and CI.** Text, JSON, SARIF, GitHub annotations and Markdown output;
+  a GitHub Action; a pre-commit hook; baselines so only *new* entry points fail the build.
 
 ## Install
 
 ```sh
-pipx install git+https://github.com/kirtanbhatt10/trustgate
-# or run from a checkout with no install at all:
+pipx install git+https://github.com/kirtanbhatt10/trustgate@v0.2.0
+# or run it once without installing anything:
+uvx --from git+https://github.com/kirtanbhatt10/trustgate@v0.2.0 trustgate scan .
+# or straight from a checkout:
 git clone https://github.com/kirtanbhatt10/trustgate && python -m trustgate scan /path/to/repo
 ```
+
+> Do not `pip install trustgate`: that name on PyPI belongs to an unrelated project.
 
 ## Usage
 
@@ -64,16 +50,20 @@ trustgate scan . --deps              # also look inside node_modules
 trustgate scan --home                # audit your own editor / agent / npm config
 trustgate scan . -f sarif -o trustgate.sarif
 trustgate scan . -f json --min-severity medium
+trustgate baseline                   # accept today's findings ...
+trustgate scan --baseline .trustgate-baseline.json   # ... and report only new ones
 trustgate rules                      # list every rule
 ```
 
 | Option | Default | Meaning |
 |--------|---------|---------|
-| `-f, --format` | `text` | `text`, `json` or `sarif` |
+| `-f, --format` | `text` | `text`, `json`, `sarif`, `github` (Actions annotations) or `markdown` |
 | `-o, --output` | stdout | write the report to a file |
 | `--fail-on LEVEL` | `high` | exit 1 if any finding is at or above `LEVEL` |
 | `--min-severity LEVEL` | `info` | hide findings below `LEVEL` |
+| `--baseline FILE` | | hide findings recorded by `trustgate baseline` (or in any JSON report) |
 | `--ignore RULE` | | skip a rule id (repeatable) |
+| `--exclude GLOB` | | skip matching paths, e.g. `tests/fixtures` (repeatable) |
 | `--deps` | off | descend into `node_modules` |
 | `--home` | off | scan user-level config in your home directory instead of a repo |
 | `--no-color` | | plain output (also respects `NO_COLOR`) |
@@ -89,6 +79,24 @@ git clone https://github.com/someone/project && trustgate scan project && code p
 Only open the folder (and only grant VS Code *Workspace Trust*) once you have read what
 trustgate reported.
 
+### Hidden instructions for AI agents
+
+`CLAUDE.md`, `AGENTS.md`, `.cursorrules`, `.github/copilot-instructions.md` and similar files
+do not run code, but your agent reads and follows them. Unicode tag characters are invisible
+in editors and diffs while models still read them, so trustgate decodes them for you:
+
+![trustgate decoding hidden Unicode tag characters in CLAUDE.md](docs/demo-hidden.gif)
+
+### Fail only on what is new
+
+Healthy projects have expected entry points (`prepare: husky`, a lint hook). Record them once
+and trustgate stays quiet until something changes:
+
+![trustgate baseline accepting two reviewed findings and then failing on a newly merged folder-open task](docs/demo-baseline.gif)
+
+A fingerprint covers the rule, the file and the configured command, not the line, so
+moving a script keeps it accepted while changing what it runs reopens it.
+
 ### After a suspected compromise
 
 `trustgate scan --home` checks the user-level files a worm would use to survive a repo
@@ -101,12 +109,14 @@ Linux, macOS and Windows. Anything listed there runs for *every* project you ope
 | Area | Files | What is flagged |
 |------|-------|-----------------|
 | VS Code | `.vscode/tasks.json`, `.vscode/settings.json`, `*.code-workspace` | tasks with `runOn: folderOpen`; settings pointing at executables inside the repo; `terminal.integrated.env.*` setting `NODE_OPTIONS`, `LD_PRELOAD`, `BASH_ENV` and similar; `task.allowAutomaticTasks` |
-| AI agents | `.claude/settings*.json`, `.mcp.json`, `.cursor/hooks.json`, `.cursor/mcp.json`, `.gemini/settings.json` | every hook command (unprompted events like `SessionStart` rated high); `statusLine` and `apiKeyHelper`-style commands; loader env vars; `enableAllProjectMcpServers`, `bypassPermissions`, `Bash(*)`; locally launched MCP servers |
-| npm | `package.json`, `binding.gyp`, `.npmrc` | install-time lifecycle scripts; gyp `<!( )` command expansions and implicit `node-gyp rebuild`; `script-shell` / `node-options`; committed auth tokens; non-default registries |
-| Python | `*.pth`, `sitecustomize.py`, `usercustomize.py`, `setup.py` | `.pth` import lines; start-up hooks; `setup.py` process, eval or network calls and overridden install commands (parsed with `ast`, never executed) |
+| AI agents | `.claude/settings*.json`, `.mcp.json`, `.cursor/hooks.json`, `.cursor/mcp.json`, `.gemini/settings.json` | every hook command (unprompted events like `SessionStart` rated high); `statusLine` and `apiKeyHelper`-style commands; loader env vars; `enableAllProjectMcpServers`, `bypassPermissions`, `Bash(*)`; locally launched MCP servers; project-enabled plugins and plugin marketplaces |
+| Agent instructions | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.cursor/rules/`, `.github/copilot-instructions.md`, `.claude/commands/`, ... | hidden Unicode used to smuggle instructions past review |
+| npm, yarn, pnpm, bun | `package.json`, `binding.gyp`, `.npmrc`, `.yarnrc.yml`, `.yarnrc`, `.pnpmfile.cjs`, `bunfig.toml` | install-time lifecycle scripts; gyp `<!( )` command expansions and implicit `node-gyp rebuild`; `script-shell` / `node-options`; committed auth tokens; non-default registries; `yarnPath` and yarn plugins; pnpm hooks; bun `preload` |
+| Python | `*.pth`, `sitecustomize.py`, `usercustomize.py`, `setup.py`, `pyproject.toml` | `.pth` import lines; start-up hooks; `setup.py` process, eval or network calls and overridden install commands (parsed with `ast`, never executed); in-tree build backends (`backend-path`) |
 | Dev Containers | `.devcontainer/**/devcontainer.json`, `.devcontainer.json` | `initializeCommand` (runs on the host) and in-container lifecycle commands |
 | Git hooks & shell | `.husky/*`, `lefthook.yml`, `.pre-commit-config.yaml`, `.envrc` | hook scripts, local pre-commit entries, direnv files |
 | GitHub Actions | `.github/workflows/*.yml` | `toJSON(secrets)` dumps; issue / PR / comment / discussion text interpolated into `run:` |
+| Gradle | `gradle/wrapper/gradle-wrapper.properties` | wrapper downloading Gradle from outside `services.gradle.org` |
 | Everything above | | invisible Unicode: tag characters (decoded for you), bidi controls, zero-width characters |
 
 Full rule list with severities: [docs/rules.md](docs/rules.md).
@@ -133,7 +143,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: kirtanbhatt10/trustgate@main
+      - uses: kirtanbhatt10/trustgate@v0.2.0
         with:
           fail-on: high
       - uses: github/codeql-action/upload-sarif@v4
@@ -143,14 +153,46 @@ jobs:
 ```
 
 A pull request that adds a folder-open task, an agent hook or an install script now fails
-the check and shows up in code scanning with the file and line.
+the check, gets an annotation on the exact file and line, a table in the job summary, and
+shows up in code scanning.
+
+| Input | Default | Meaning |
+|-------|---------|---------|
+| `path` | `.` | directory to scan |
+| `fail-on` | `high` | fail at or above this severity |
+| `min-severity` | `info` | hide findings below this severity |
+| `sarif-file` | `trustgate.sarif` | SARIF output path (empty to skip) |
+| `baseline` | | baseline file (see below) |
+| `ignore` | | rule ids to skip, space or comma separated |
+| `exclude` | | path globs to skip, space or comma separated |
+| `annotations` | `true` | annotate each finding's file and line |
+| `job-summary` | `true` | write a Markdown table to the job summary |
+
+Outputs: `sarif-file` and `findings` (the number of findings reported).
+
+#### With a baseline
+
+Commit `.trustgate-baseline.json` (created with `trustgate baseline`), then read it from the
+**base branch** so a pull request cannot accept its own findings by editing the file:
+
+```yaml
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Baseline from the base branch
+        run: git show "origin/${GITHUB_BASE_REF}:.trustgate-baseline.json" > "$RUNNER_TEMP/baseline.json" || echo '{"findings": []}' > "$RUNNER_TEMP/baseline.json"
+      - uses: kirtanbhatt10/trustgate@v0.2.0
+        with:
+          baseline: ${{ runner.temp }}/baseline.json
+```
 
 ### pre-commit
 
 ```yaml
 repos:
   - repo: https://github.com/kirtanbhatt10/trustgate
-    rev: main
+    rev: v0.2.0
     hooks:
       - id: trustgate
 ```
@@ -159,13 +201,15 @@ repos:
 
 - **No repository-controlled config.** trustgate never reads an ignore file from the
   repo it scans; otherwise the attacker's commit could switch the scanner off. Use
-  `--ignore` in your CI workflow instead.
+  `--ignore`, `--exclude` and `--baseline` in your CI workflow instead.
 - **Never executes anything.** JSON and JSONC are parsed by a small built-in reader,
-  `setup.py` by Python's `ast`, YAML by line matching. Symlinks are not followed.
+  `setup.py` by Python's `ast`, YAML and TOML by line matching. Symlinks are not followed.
+- **Safe to print.** Terminal escape sequences and invisible or bidirectional characters in
+  repository text are shown as `\uXXXX`, so a crafted command cannot rewrite the report.
 - **Bounded.** Files over 2 MB and binary files are skipped; `.git`, virtualenvs and
   `node_modules` are skipped unless you pass `--deps`.
 - **Stable fingerprints.** SARIF results carry `partialFingerprints` so code scanning can
-  track a finding across commits.
+  track a finding across commits; baselines use the same fingerprints.
 
 ## Related tools
 
@@ -177,8 +221,14 @@ trustgate covers one question: *what runs automatically?* For neighbouring probl
 
 ## Contributing
 
-Bug reports, false positives and new auto-run locations are welcome. See
-[CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
+trustgate is small, has no dependencies and every check lives in one short file, which makes
+it a good first open-source contribution. Start with an issue labelled
+[good first issue](https://github.com/kirtanbhatt10/trustgate/labels/good%20first%20issue),
+read [CONTRIBUTING.md](CONTRIBUTING.md), or look at the [roadmap](ROADMAP.md). Bug
+reports, false positives and new auto-run locations are all welcome. Security issues:
+[SECURITY.md](SECURITY.md).
+
+The demo GIFs are generated from real runs by [`scripts/make_demos.py`](scripts/make_demos.py).
 
 ## License
 

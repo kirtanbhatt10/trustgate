@@ -1,4 +1,4 @@
-name: trustgate
+name: trustgate scan
 description: Find IDE tasks, AI agent hooks, install scripts and other code that runs automatically from a repository.
 author: Kirtan Bhatt
 branding:
@@ -12,14 +12,37 @@ inputs:
   fail-on:
     description: Fail the step if a finding is at or above this severity (info, low, medium, high, critical).
     default: high
+  min-severity:
+    description: Hide findings below this severity.
+    default: info
   sarif-file:
     description: Also write a SARIF report to this path (leave empty to skip).
     default: trustgate.sarif
+  baseline:
+    description: >
+      Baseline file from `trustgate baseline`. Findings recorded in it are not reported.
+      Read it from your base branch, not from the pull request, so a PR cannot accept its own findings.
+    default: ""
+  ignore:
+    description: Rule ids to skip, separated by spaces or commas (for example "TG600 TG203").
+    default: ""
+  exclude:
+    description: Path globs to skip, separated by spaces or commas (for example "tests/fixtures/*").
+    default: ""
+  annotations:
+    description: Add an annotation on the file and line of each finding ("true" or "false").
+    default: "true"
+  job-summary:
+    description: Write a Markdown table of findings to the job summary ("true" or "false").
+    default: "true"
 
 outputs:
   sarif-file:
     description: Path of the SARIF report, if one was written.
     value: ${{ steps.scan.outputs.sarif-file }}
+  findings:
+    description: Number of findings at or above min-severity (after the baseline).
+    value: ${{ steps.scan.outputs.findings }}
 
 runs:
   using: composite
@@ -29,13 +52,43 @@ runs:
       env:
         TG_PATH: ${{ inputs.path }}
         TG_FAIL_ON: ${{ inputs.fail-on }}
+        TG_MIN: ${{ inputs.min-severity }}
         TG_SARIF: ${{ inputs.sarif-file }}
+        TG_BASELINE: ${{ inputs.baseline }}
+        TG_IGNORE: ${{ inputs.ignore }}
+        TG_EXCLUDE: ${{ inputs.exclude }}
+        TG_ANNOTATIONS: ${{ inputs.annotations }}
+        TG_SUMMARY: ${{ inputs.job-summary }}
         PYTHONPATH: ${{ github.action_path }}
+        PYTHONDONTWRITEBYTECODE: "1"
       run: |
         set -euo pipefail
+        set -f  # never glob-expand the exclude patterns
         PY="$(command -v python3 || command -v python)"
+        args=(--min-severity "$TG_MIN" --no-color)
+        [ -n "$TG_BASELINE" ] && args+=(--baseline "$TG_BASELINE")
+        for rule in ${TG_IGNORE//,/ }; do args+=(--ignore "$rule"); done
+        for glob in ${TG_EXCLUDE//,/ }; do args+=(--exclude "$glob"); done
+
+        # Report-only runs: exit 1 just means "findings", anything else is a real error.
+        report() {
+          local rc=0
+          "$PY" -m trustgate scan "$TG_PATH" "${args[@]}" --fail-on critical "$@" || rc=$?
+          if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+        }
+
         if [ -n "$TG_SARIF" ]; then
-          "$PY" -m trustgate scan "$TG_PATH" --format sarif --output "$TG_SARIF" --fail-on critical --no-color || true
+          report --format sarif --output "$TG_SARIF"
           echo "sarif-file=$TG_SARIF" >> "$GITHUB_OUTPUT"
         fi
-        "$PY" -m trustgate scan "$TG_PATH" --fail-on "$TG_FAIL_ON" --no-color
+        json="$(mktemp)"
+        report --format json --output "$json"
+        echo "findings=$("$PY" -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["findings"]))' "$json")" >> "$GITHUB_OUTPUT"
+        if [ "$TG_SUMMARY" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          report --format markdown --output "$json.md"
+          cat "$json.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        if [ "$TG_ANNOTATIONS" = "true" ]; then
+          report --format github
+        fi
+        "$PY" -m trustgate scan "$TG_PATH" "${args[@]}" --fail-on "$TG_FAIL_ON"
