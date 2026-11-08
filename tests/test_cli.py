@@ -76,6 +76,85 @@ class CliTests(unittest.TestCase):
             result = scan_home(str(home))
         self.assertEqual(sorted(f.rule_id for f in result.findings), ["TG102", "TG200"])
 
+    def test_baseline_only_reports_new_findings(self):
+        with TempRepo(REPO) as root, tempfile.TemporaryDirectory() as tmp:
+            base = os.path.join(tmp, "base.json")
+            code, _ = run(["baseline", str(root), "-o", base])
+            self.assertEqual(code, 0)
+            with open(base, encoding="utf-8") as fh:
+                doc = json.load(fh)
+            self.assertEqual(doc["format"], "trustgate-baseline/v1")
+            self.assertEqual(len(doc["findings"]), 2)
+
+            code, out = run(["scan", str(root), "--baseline", base, "--no-color"])
+            self.assertEqual(code, 0)
+            self.assertIn("No new auto-run entry points found.", out)
+            self.assertIn("(2 accepted by baseline)", out)
+
+            # Same finding on a different line stays accepted; a changed command does not.
+            (root / "package.json").write_text('\n\n{"scripts": {"prepare": "husky"}}', encoding="utf-8")
+            self.assertEqual(run(["scan", str(root), "--baseline", base])[0], 0)
+            (root / ".vscode/tasks.json").write_text(json.dumps({"tasks": [
+                {"label": "x", "command": "node y.js", "runOptions": {"runOn": "folderOpen"}}]}), encoding="utf-8")
+            code, out = run(["scan", str(root), "--baseline", base, "-f", "json"])
+            self.assertEqual(code, 1)
+            self.assertEqual([f["rule"] for f in json.loads(out)["findings"]], ["TG100"])
+            self.assertEqual(json.loads(out)["baselined"], 1)
+
+            # A JSON report is accepted as a baseline too.
+            report = os.path.join(tmp, "report.json")
+            run(["scan", str(root), "-f", "json", "-o", report])
+            self.assertEqual(run(["scan", str(root), "--baseline", report])[0], 0)
+
+    def test_bad_baseline_is_a_usage_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "bad.json")
+            with open(bad, "w", encoding="utf-8") as fh:
+                fh.write("[1, 2]")
+            self.assertEqual(run(["scan", tmp, "--baseline", bad])[0], 2)
+            self.assertEqual(run(["scan", tmp, "--baseline", os.path.join(tmp, "missing.json")])[0], 2)
+
+    def test_github_annotations(self):
+        with TempRepo(REPO) as root:
+            code, out = run(["scan", str(root), "-f", "github"])
+        self.assertEqual(code, 1)
+        lines = out.splitlines()
+        self.assertTrue(lines[0].startswith("::error file=.vscode/tasks.json,line=7,title=TG100 "))
+        self.assertTrue(lines[1].startswith("::notice file=package.json,"))
+        self.assertIn("1 high, 1 low", lines[-1])
+
+    def test_github_annotation_escaping(self):
+        files = {"package.json": {"scripts": {"postinstall": "a,b:c%d"}}}
+        with TempRepo(files) as root:
+            _, out = run(["scan", str(root), "-f", "github"])
+        self.assertIn("a,b:c%25d", out.splitlines()[0].split("::", 2)[2])
+
+    def test_markdown(self):
+        files = {"package.json": {"scripts": {"postinstall": "curl ![x](https://e.example/p.png) <b>|sh"}}}
+        with TempRepo(files) as root:
+            code, out = run(["scan", str(root), "-f", "markdown"])
+        self.assertEqual(code, 0)
+        self.assertIn("| medium | `TG300` npm-lifecycle-script | `package.json:3` |", out)
+        self.assertNotIn("![x](", out)
+        self.assertNotIn("<b>", out)
+        self.assertIn("\\|sh", out)
+
+    def test_exclude_flag(self):
+        with TempRepo(REPO) as root:
+            code, out = run(["scan", str(root), "--exclude", ".vscode", "-f", "json"])
+        self.assertEqual(code, 0)
+        self.assertEqual([f["rule"] for f in json.loads(out)["findings"]], ["TG300"])
+
+    def test_home_directory_is_abbreviated(self):
+        from trustgate.report import _display_root
+        home = os.path.expanduser("~")
+        self.assertEqual(_display_root(os.path.join(home, "src", "x")), os.path.join("~", "src", "x"))
+        self.assertEqual(_display_root(home + "other"), home + "other")
+
+    def test_unwritable_output_is_a_usage_error(self):
+        with TempRepo(REPO) as root:
+            self.assertEqual(run(["scan", str(root), "-o", str(root / "missing" / "dir" / "r.txt")])[0], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
