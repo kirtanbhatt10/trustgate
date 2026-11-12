@@ -102,8 +102,18 @@ moving a script keeps it accepted while changing what it runs reopens it.
 
 `trustgate scan --home` checks the user-level files a worm would use to survive a repo
 cleanup: `~/.claude/settings.json`, `~/.claude.json`, `~/.cursor/hooks.json`,
-`~/.gemini/settings.json`, `~/.npmrc` and VS Code user `settings.json` / `tasks.json` on
-Linux, macOS and Windows. Anything listed there runs for *every* project you open.
+`~/.gemini/settings.json`, `~/.npmrc` and user `settings.json` / `tasks.json` for VS Code,
+VS Code Insiders and Cursor on Linux, macOS and Windows.
+
+| OS | User profile folder |
+|----|---------------------|
+| Linux | `~/.config/<editor>/User/` |
+| macOS | `~/Library/Application Support/<editor>/User/` |
+| Windows | `%APPDATA%\<editor>\User\` |
+
+`<editor>` is `Code`, `Code - Insiders` or `Cursor`. Windows `APPDATA` overrides
+inside the home directory are honored. Anything listed there runs for *every*
+project you open.
 
 ## What it checks
 
