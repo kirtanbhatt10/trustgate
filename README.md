@@ -27,7 +27,7 @@ and when, and fails CI when something new shows up.
 - **Zero dependencies.** Python 3.10+ standard library only. Nothing to trust but this code.
 - **Offline.** Reads files and nothing else: no network, no execution, no telemetry.
 - **Built for review and CI.** Text, JSON, SARIF, GitHub annotations and Markdown output;
-  a GitHub Action; a pre-commit hook; baselines so only *new* entry points fail the build.
+  a GitHub Action; a pre-commit hook; baselines so only _new_ entry points fail the build.
 
 ## Install
 
@@ -56,18 +56,18 @@ trustgate rules                      # list every rule
 trustgate rules TG100                # explain one rule and how to fix it
 ```
 
-| Option | Default | Meaning |
-|--------|---------|---------|
-| `-f, --format` | `text` | `text`, `json`, `sarif`, `github` (Actions annotations) or `markdown` |
-| `-o, --output` | stdout | write the report to a file |
-| `--fail-on LEVEL` | `high` | exit 1 if any finding is at or above `LEVEL` |
-| `--min-severity LEVEL` | `info` | hide findings below `LEVEL` |
-| `--baseline FILE` | | hide findings recorded by `trustgate baseline` (or in any JSON report) |
-| `--ignore RULE` | | skip a rule id (repeatable) |
-| `--exclude GLOB` | | skip matching paths, e.g. `tests/fixtures` (repeatable) |
-| `--deps` | off | descend into `node_modules` |
-| `--home` | off | scan user-level config in your home directory instead of a repo |
-| `--no-color` | | plain output (also respects `NO_COLOR`) |
+| Option                 | Default | Meaning                                                                |
+| ---------------------- | ------- | ---------------------------------------------------------------------- |
+| `-f, --format`         | `text`  | `text`, `json`, `sarif`, `github` (Actions annotations) or `markdown`  |
+| `-o, --output`         | stdout  | write the report to a file                                             |
+| `--fail-on LEVEL`      | `high`  | exit 1 if any finding is at or above `LEVEL`                           |
+| `--min-severity LEVEL` | `info`  | hide findings below `LEVEL`                                            |
+| `--baseline FILE`      |         | hide findings recorded by `trustgate baseline` (or in any JSON report) |
+| `--ignore RULE`        |         | skip a rule id (repeatable)                                            |
+| `--exclude GLOB`       |         | skip matching paths, e.g. `tests/fixtures` (repeatable)                |
+| `--deps`               | off     | descend into `node_modules`                                            |
+| `--home`               | off     | scan user-level config in your home directory instead of a repo        |
+| `--no-color`           |         | plain output (also respects `NO_COLOR`)                                |
 
 Exit codes: `0` nothing at or above `--fail-on`, `1` findings, `2` usage error.
 
@@ -77,7 +77,7 @@ Exit codes: `0` nothing at or above `--fail-on`, `1` findings, `2` usage error.
 git clone https://github.com/someone/project && trustgate scan project && code project
 ```
 
-Only open the folder (and only grant VS Code *Workspace Trust*) once you have read what
+Only open the folder (and only grant VS Code _Workspace Trust_) once you have read what
 trustgate reported.
 
 ### Hidden instructions for AI agents
@@ -103,33 +103,35 @@ moving a script keeps it accepted while changing what it runs reopens it.
 `trustgate scan --home` checks the user-level files a worm would use to survive a repo
 cleanup: `~/.claude/settings.json`, `~/.claude.json`, `~/.cursor/hooks.json`,
 `~/.gemini/settings.json`, `~/.npmrc` and VS Code user `settings.json` / `tasks.json` on
-Linux, macOS and Windows. Anything listed there runs for *every* project you open.
+Linux, macOS and Windows. Anything listed there runs for _every_ project you open.
 
 ## What it checks
 
-| Area | Files | What is flagged |
-|------|-------|-----------------|
-| VS Code | `.vscode/tasks.json`, `.vscode/settings.json`, `*.code-workspace` | tasks with `runOn: folderOpen`; settings pointing at executables inside the repo; `terminal.integrated.env.*` setting `NODE_OPTIONS`, `LD_PRELOAD`, `BASH_ENV` and similar; `task.allowAutomaticTasks` |
-| AI agents | `.claude/settings*.json`, `.mcp.json`, `.cursor/hooks.json`, `.cursor/mcp.json`, `.gemini/settings.json` | every hook command (unprompted events like `SessionStart` rated high); `statusLine` and `apiKeyHelper`-style commands; loader env vars; `enableAllProjectMcpServers`, `bypassPermissions`, `Bash(*)`; locally launched MCP servers; project-enabled plugins and plugin marketplaces |
-| Agent instructions | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.cursor/rules/`, `.github/copilot-instructions.md`, `.claude/commands/`, ... | hidden Unicode used to smuggle instructions past review |
-| npm, yarn, pnpm, bun | `package.json`, `binding.gyp`, `.npmrc`, `.yarnrc.yml`, `.yarnrc`, `.pnpmfile.cjs`, `bunfig.toml` | install-time lifecycle scripts; gyp `<!( )` command expansions and implicit `node-gyp rebuild`; `script-shell` / `node-options`; committed auth tokens; non-default registries; `yarnPath` and yarn plugins; pnpm hooks; bun `preload` |
-| Composer (PHP) | `composer.json` | event scripts (`post-install-cmd`, `post-autoload-dump`, ...) that run automatically on install or update |
-| Python | `*.pth`, `sitecustomize.py`, `usercustomize.py`, `setup.py`, `pyproject.toml` | `.pth` import lines; start-up hooks; `setup.py` process, eval or network calls and overridden install commands (parsed with `ast`, never executed); in-tree build backends (`backend-path`) |
-| Dev Containers | `.devcontainer/**/devcontainer.json`, `.devcontainer.json` | `initializeCommand` (runs on the host) and in-container lifecycle commands |
-| Git hooks & shell | `.husky/*`, `lefthook.yml`, `.pre-commit-config.yaml`, `.envrc`, `.nvim.lua`, `.nvimrc`, `.exrc` | hook scripts, local pre-commit entries, direnv files, Vim/Neovim local config |
-| GitHub Actions | `.github/workflows/*.yml` | `toJSON(secrets)` dumps; issue / PR / comment / discussion text interpolated into `run:` |
-| Rust | `build.rs`, `Cargo.toml` | `build.rs` and custom `build = "..."` scripts that Cargo and rust-analyzer run on build or workspace load |
-| Gradle | `gradle/wrapper/gradle-wrapper.properties` | wrapper downloading Gradle from outside `services.gradle.org` |
-| Everything above | | invisible Unicode: tag characters (decoded for you), bidi controls, zero-width characters |
+| Area                 | Files                                                                                                                                | What is flagged                                                                                                                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VS Code              | `.vscode/tasks.json`, `.vscode/settings.json`, `*.code-workspace`                                                                    | tasks with `runOn: folderOpen`; settings pointing at executables inside the repo; `terminal.integrated.env.*` setting `NODE_OPTIONS`, `LD_PRELOAD`, `BASH_ENV` and similar; `task.allowAutomaticTasks`                                                                              |
+| AI agents            | `.claude/settings*.json`, `.mcp.json`, `.cursor/hooks.json`, `.cursor/mcp.json`, `.gemini/settings.json`                             | every hook command (unprompted events like `SessionStart` rated high); `statusLine` and `apiKeyHelper`-style commands; loader env vars; `enableAllProjectMcpServers`, `bypassPermissions`, `Bash(*)`; locally launched MCP servers; project-enabled plugins and plugin marketplaces |
+| Agent instructions   | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.cursor/rules/`, `.github/copilot-instructions.md`, `.claude/commands/`, ... | hidden Unicode used to smuggle instructions past review                                                                                                                                                                                                                             |
+| npm, yarn, pnpm, bun | `package.json`, `binding.gyp`, `.npmrc`, `.yarnrc.yml`, `.yarnrc`, `.pnpmfile.cjs`, `bunfig.toml`                                    | install-time lifecycle scripts; gyp `<!( )` command expansions and implicit `node-gyp rebuild`; `script-shell` / `node-options`; committed auth tokens; non-default registries; `yarnPath` and yarn plugins; pnpm hooks; bun `preload`                                              |
+| Composer (PHP)       | `composer.json`                                                                                                                      | event scripts (`post-install-cmd`, `post-autoload-dump`, ...) that run automatically on install or update                                                                                                                                                                           |
+| Python               | `*.pth`, `sitecustomize.py`, `usercustomize.py`, `setup.py`, `pyproject.toml`                                                        | `.pth` import lines; start-up hooks; `setup.py` process, eval or network calls and overridden install commands (parsed with `ast`, never executed); in-tree build backends (`backend-path`)                                                                                         |
+| Dev Containers       | `.devcontainer/**/devcontainer.json`, `.devcontainer.json`                                                                           | `initializeCommand` (runs on the host) and in-container lifecycle commands                                                                                                                                                                                                          |
+| Git hooks & shell    | `.husky/*`, `lefthook.yml`, `.pre-commit-config.yaml`, `.envrc`, `.nvim.lua`, `.nvimrc`, `.exrc`                                     | hook scripts, local pre-commit entries, direnv files, Vim/Neovim local config                                                                                                                                                                                                       |
+| GitHub Actions       | `.github/workflows/*.yml`                                                                                                            | `toJSON(secrets)` dumps; issue / PR / comment / discussion text interpolated into `run:`                                                                                                                                                                                            |
+| Rust                 | `build.rs`, `Cargo.toml`                                                                                                             | `build.rs` and custom `build = "..."` scripts that Cargo and rust-analyzer run on build or workspace load                                                                                                                                                                           |
+| Gradle               | `gradle/wrapper/gradle-wrapper.properties`                                                                                           | wrapper downloading Gradle from outside `services.gradle.org`                                                                                                                                                                                                                       |
+| Everything above     |                                                                                                                                      | invisible Unicode: tag characters (decoded for you), bidi controls, zero-width characters                                                                                                                                                                                           |
 
 Full rule list with severities: [docs/rules.md](docs/rules.md).
 
-trustgate reports *where* code will run and *what* is configured to run. It does not try
+trustgate reports _where_ code will run and _what_ is configured to run. It does not try
 to decide whether a script is malicious; a reviewer makes that call with the evidence in
 front of them. Expect findings in healthy projects too (a `prepare: husky` script is
 normal). The value is that nothing runs without you knowing.
 
 ## CI
+
+For other CI providers, see the [GitLab CI and CircleCI examples](docs/ci.md).
 
 ### GitHub Action
 
@@ -159,17 +161,17 @@ A pull request that adds a folder-open task, an agent hook or an install script 
 the check, gets an annotation on the exact file and line, a table in the job summary, and
 shows up in code scanning.
 
-| Input | Default | Meaning |
-|-------|---------|---------|
-| `path` | `.` | directory to scan |
-| `fail-on` | `high` | fail at or above this severity |
-| `min-severity` | `info` | hide findings below this severity |
-| `sarif-file` | `trustgate.sarif` | SARIF output path (empty to skip) |
-| `baseline` | | baseline file (see below) |
-| `ignore` | | rule ids to skip, space or comma separated |
-| `exclude` | | path globs to skip, space or comma separated |
-| `annotations` | `true` | annotate each finding's file and line |
-| `job-summary` | `true` | write a Markdown table to the job summary |
+| Input          | Default           | Meaning                                      |
+| -------------- | ----------------- | -------------------------------------------- |
+| `path`         | `.`               | directory to scan                            |
+| `fail-on`      | `high`            | fail at or above this severity               |
+| `min-severity` | `info`            | hide findings below this severity            |
+| `sarif-file`   | `trustgate.sarif` | SARIF output path (empty to skip)            |
+| `baseline`     |                   | baseline file (see below)                    |
+| `ignore`       |                   | rule ids to skip, space or comma separated   |
+| `exclude`      |                   | path globs to skip, space or comma separated |
+| `annotations`  | `true`            | annotate each finding's file and line        |
+| `job-summary`  | `true`            | write a Markdown table to the job summary    |
 
 Outputs: `sarif-file` and `findings` (the number of findings reported).
 
@@ -216,7 +218,7 @@ repos:
 
 ## Related tools
 
-trustgate covers one question: *what runs automatically?* For neighbouring problems:
+trustgate covers one question: _what runs automatically?_ For neighbouring problems:
 
 - [mcp-warden](https://github.com/kirtanbhatt10/mcp-warden): deep audit of MCP server configs
 - [runnerguard](https://github.com/kirtanbhatt10/runnerguard): full GitHub Actions workflow linting
