@@ -6,7 +6,7 @@ import fnmatch
 import os
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterable, List, Optional, Sequence
 
 from .checks import Context, agents, build, devcontainer, hooks, node, php, python, vscode, workflows
@@ -167,9 +167,12 @@ def scan_home(home: Optional[str] = None, ignore: Iterable[str] = ()) -> ScanRes
     if sys.platform == "win32" and os.environ.get("APPDATA"):
         appdata = Path(os.environ["APPDATA"])
         if appdata.is_relative_to(base):
+            seen = {PureWindowsPath(rel) for rel in present}
             for editor in ("Code", "Code - Insiders", "Cursor"):
                 for name in ("settings.json", "tasks.json"):
                     rel = (appdata.relative_to(base) / editor / "User" / name).as_posix()
-                    if (base / rel).is_file() and rel not in present:
+                    key = PureWindowsPath(rel)
+                    if (base / rel).is_file() and key not in seen:
                         present.append(rel)
+                        seen.add(key)
     return scan(str(base), files=present, ignore=ignore)

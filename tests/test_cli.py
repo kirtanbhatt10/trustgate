@@ -244,8 +244,9 @@ class HomeScanTests(unittest.TestCase):
             files[prefix + "/" + editor + "/User/tasks.json"] = HOME_TASKS
             files[prefix + "/" + editor + "/User/settings.json"] = HOME_SETTINGS
         with TempRepo(files) as home:
+            appdata = home / "appdata" / "roaming" if os.name == "nt" else home / prefix
             with mock.patch("trustgate.scanner.sys.platform", "win32"), \
-                 mock.patch.dict(os.environ, {"APPDATA": str(home / prefix)}):
+                 mock.patch.dict(os.environ, {"APPDATA": str(appdata)}):
                 result = scan_home(str(home))
         self.assertEqual(result.files_scanned, 6)
         self.assertEqual(len(result.findings), 6)
@@ -306,6 +307,27 @@ class HomeScanTests(unittest.TestCase):
              mock.patch("subprocess.Popen", side_effect=AssertionError("execution forbidden")), \
              mock.patch("os.system", side_effect=AssertionError("execution forbidden")):
             self._editor(".config/Cursor/User")
+
+
+    def test_windows_appdata_case_variants_are_not_duplicates(self):
+        expected = {
+            "AppData/Roaming/" + editor + "/User/" + name
+            for editor in ("Code", "Code - Insiders", "Cursor")
+            for name in ("settings.json", "tasks.json")
+        }
+        with TempRepo({}) as home:
+            existing = {(home / rel).as_posix().lower() for rel in expected}
+            def is_file(path):
+                return path.as_posix().lower() in existing
+            appdata = home / "aPpDaTa" / "rOaMiNg"
+            with mock.patch("trustgate.scanner.sys.platform", "win32"), \
+                 mock.patch.dict(os.environ, {"APPDATA": str(appdata)}), \
+                 mock.patch("trustgate.scanner.Path.is_file", new=is_file), \
+                 mock.patch("trustgate.scanner.scan") as scan_mock:
+                scan_home(str(home))
+            paths = scan_mock.call_args.kwargs["files"]
+        self.assertEqual(len(paths), 6)
+        self.assertEqual(set(paths), expected)
 
 
 if __name__ == "__main__":
