@@ -6,7 +6,7 @@ import fnmatch
 import os
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterable, List, Optional, Sequence
 
 from .checks import Context, agents, build, devcontainer, hooks, node, php, python, vscode, workflows
@@ -46,10 +46,19 @@ HOME_FILES = (
     ".claude/settings.json", ".claude/settings.local.json", ".claude.json",
     ".cursor/hooks.json", ".cursor/mcp.json", ".gemini/settings.json", ".npmrc",
     ".config/Code/User/settings.json", ".config/Code/User/tasks.json",
-    ".config/Code - Insiders/User/settings.json", ".config/VSCodium/User/settings.json",
+    ".config/Code - Insiders/User/settings.json", ".config/Code - Insiders/User/tasks.json",
+    ".config/VSCodium/User/settings.json",
+    ".config/Cursor/User/settings.json", ".config/Cursor/User/tasks.json",
     "Library/Application Support/Code/User/settings.json",
     "Library/Application Support/Code/User/tasks.json",
+    "Library/Application Support/Code - Insiders/User/settings.json",
+    "Library/Application Support/Code - Insiders/User/tasks.json",
+    "Library/Application Support/Cursor/User/settings.json",
+    "Library/Application Support/Cursor/User/tasks.json",
     "AppData/Roaming/Code/User/settings.json", "AppData/Roaming/Code/User/tasks.json",
+    "AppData/Roaming/Code - Insiders/User/settings.json",
+    "AppData/Roaming/Code - Insiders/User/tasks.json",
+    "AppData/Roaming/Cursor/User/settings.json", "AppData/Roaming/Cursor/User/tasks.json",
 )
 
 
@@ -158,8 +167,12 @@ def scan_home(home: Optional[str] = None, ignore: Iterable[str] = ()) -> ScanRes
     if sys.platform == "win32" and os.environ.get("APPDATA"):
         appdata = Path(os.environ["APPDATA"])
         if appdata.is_relative_to(base):
-            for name in ("settings.json", "tasks.json"):
-                rel = (appdata.relative_to(base) / "Code" / "User" / name).as_posix()
-                if (base / rel).is_file() and rel not in present:
-                    present.append(rel)
+            seen = {PureWindowsPath(rel) for rel in present}
+            for editor in ("Code", "Code - Insiders", "Cursor"):
+                for name in ("settings.json", "tasks.json"):
+                    rel = (appdata.relative_to(base) / editor / "User" / name).as_posix()
+                    key = PureWindowsPath(rel)
+                    if (base / rel).is_file() and key not in seen:
+                        present.append(rel)
+                        seen.add(key)
     return scan(str(base), files=present, ignore=ignore)

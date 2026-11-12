@@ -64,8 +64,8 @@ def _settings(ctx: Context, rel: str, settings: Any) -> None:
 
 
 def _user_dir(p) -> bool:
-    """VS Code user profile folder (Code/User, Code - Insiders/User, VSCodium/User)."""
-    return len(p.parts) >= 3 and p.parts[-2] == "User" and p.parts[-3] in ("Code", "Code - Insiders", "VSCodium")
+    """VS Code user profile folder (Code/User, Code - Insiders/User, VSCodium/User, Cursor/User)."""
+    return len(p.parts) >= 3 and p.parts[-2] == "User" and p.parts[-3] in ("Code", "Code - Insiders", "VSCodium", "Cursor")
 
 
 def check(ctx: Context) -> None:
