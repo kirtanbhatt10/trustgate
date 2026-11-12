@@ -4,8 +4,10 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from trustgate.cli import main
+from trustgate.scanner import HOME_FILES, scan, scan_home
 
 from helpers import TempRepo
 
@@ -86,11 +88,13 @@ class CliTests(unittest.TestCase):
 
     def test_home_scan(self):
         files = {".claude/settings.json": {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "x"}]}]}},
-                 ".config/Code/User/settings.json": {"terminal.integrated.env.linux": {"BASH_ENV": "/tmp/x"}}}
+                 ".config/Code/User/settings.json": {"terminal.integrated.env.linux": {"BASH_ENV": "/tmp/x"}},
+                 ".config/Cursor/User/tasks.json": {"tasks": [{"label": "cursor", "command": "echo cursor",
+                                                              "runOptions": {"runOn": "folderOpen"}}]}}
         with TempRepo(files) as home:
             from trustgate.scanner import scan_home
             result = scan_home(str(home))
-        self.assertEqual(sorted(f.rule_id for f in result.findings), ["TG102", "TG200"])
+        self.assertEqual(sorted(f.rule_id for f in result.findings), ["TG100", "TG102", "TG200"])
 
     def test_baseline_only_reports_new_findings(self):
         with TempRepo(REPO) as root, tempfile.TemporaryDirectory() as tmp:
@@ -170,6 +174,138 @@ class CliTests(unittest.TestCase):
     def test_unwritable_output_is_a_usage_error(self):
         with TempRepo(REPO) as root:
             self.assertEqual(run(["scan", str(root), "-o", str(root / "missing" / "dir" / "r.txt")])[0], 2)
+
+
+HOME_TASKS = {"tasks": [{"label": "home-auto", "command": "echo home-contract",
+                         "runOptions": {"runOn": "folderOpen"}}]}
+HOME_SETTINGS = {"terminal.integrated.env.linux": {"BASH_ENV": "./home-contract-env"}}
+
+
+class HomeScanTests(unittest.TestCase):
+    def _editor(self, prefix):
+        paths = {prefix + "/tasks.json": HOME_TASKS, prefix + "/settings.json": HOME_SETTINGS}
+        with TempRepo(paths) as home:
+            result = scan_home(str(home))
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.files_scanned, 2)
+        by_rule = {f.rule_id: f for f in result.findings}
+        self.assertEqual(set(by_rule), {"TG100", "TG102"})
+        self.assertEqual(by_rule["TG100"].path, prefix + "/tasks.json")
+        self.assertEqual(by_rule["TG100"].line, 7)
+        self.assertEqual(by_rule["TG100"].evidence, "echo home-contract")
+        self.assertEqual(by_rule["TG102"].path, prefix + "/settings.json")
+        self.assertEqual(by_rule["TG102"].line, 3)
+        self.assertEqual(by_rule["TG102"].evidence, "BASH_ENV=./home-contract-env")
+
+    def test_cursor_linux(self):
+        self._editor(".config/Cursor/User")
+
+    def test_cursor_macos(self):
+        self._editor("Library/Application Support/Cursor/User")
+
+    def test_cursor_windows_default(self):
+        self._editor("AppData/Roaming/Cursor/User")
+
+    def test_insiders_all_three_layouts(self):
+        for prefix in (".config/Code - Insiders/User",
+                       "Library/Application Support/Code - Insiders/User",
+                       "AppData/Roaming/Code - Insiders/User"):
+            with self.subTest(prefix=prefix):
+                self._editor(prefix)
+
+    def test_existing_code_profiles_are_preserved(self):
+        for prefix in (".config/Code/User", "Library/Application Support/Code/User",
+                       "AppData/Roaming/Code/User"):
+            with self.subTest(prefix=prefix):
+                self._editor(prefix)
+
+    def test_home_file_list_is_unique(self):
+        self.assertEqual(len(HOME_FILES), len(set(HOME_FILES)))
+
+    def test_windows_custom_appdata_finds_all_editors(self):
+        prefix = "custom-roaming"
+        files = {}
+        for editor in ("Code", "Code - Insiders", "Cursor"):
+            files[prefix + "/" + editor + "/User/tasks.json"] = HOME_TASKS
+            files[prefix + "/" + editor + "/User/settings.json"] = HOME_SETTINGS
+        with TempRepo(files) as home:
+            with mock.patch("trustgate.scanner.sys.platform", "win32"), \
+                 mock.patch.dict(os.environ, {"APPDATA": str(home / prefix)}):
+                result = scan_home(str(home))
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.files_scanned, 6)
+        self.assertEqual(len(result.findings), 6)
+        self.assertEqual({f.path for f in result.findings}, set(files))
+
+    def test_default_windows_appdata_is_not_scanned_twice(self):
+        prefix = "AppData/Roaming"
+        files = {}
+        for editor in ("Code", "Code - Insiders", "Cursor"):
+            files[prefix + "/" + editor + "/User/tasks.json"] = HOME_TASKS
+            files[prefix + "/" + editor + "/User/settings.json"] = HOME_SETTINGS
+        with TempRepo(files) as home:
+            with mock.patch("trustgate.scanner.sys.platform", "win32"), \
+                 mock.patch.dict(os.environ, {"APPDATA": str(home / prefix)}):
+                result = scan_home(str(home))
+        self.assertEqual(result.files_scanned, 6)
+        self.assertEqual(len(result.findings), 6)
+        self.assertEqual(result.errors, [])
+
+    def test_appdata_outside_home_remains_out_of_scope(self):
+        files = {"Cursor/User/tasks.json": HOME_TASKS, "Code/User/tasks.json": HOME_TASKS}
+        with TempRepo({}) as home, TempRepo(files) as outside:
+            with mock.patch("trustgate.scanner.sys.platform", "win32"), \
+                 mock.patch.dict(os.environ, {"APPDATA": str(outside)}):
+                result = scan_home(str(home))
+        self.assertEqual(result.files_scanned, 0)
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.errors, [])
+
+    def test_appdata_is_only_used_on_windows(self):
+        files = {"custom-roaming/Cursor/User/tasks.json": HOME_TASKS}
+        for platform in ("linux", "darwin"):
+            with self.subTest(platform=platform):
+                with TempRepo(files) as home:
+                    with mock.patch("trustgate.scanner.sys.platform", platform), \
+                         mock.patch.dict(os.environ, {"APPDATA": str(home / "custom-roaming")}):
+                        result = scan_home(str(home))
+                self.assertEqual(result.files_scanned, 0)
+                self.assertEqual(result.findings, [])
+
+    def test_unrelated_user_directories_are_not_vscode_profiles(self):
+        files = {"custom/NotCursor/User/tasks.json": HOME_TASKS,
+                 "custom/Cursorish/User/settings.json": HOME_SETTINGS}
+        with TempRepo(files) as home:
+            result = scan(str(home))
+        self.assertEqual(result.findings, [])
+        self.assertEqual(result.errors, [])
+
+    def test_ignore_rules_applies_to_cursor_home_findings(self):
+        files = {".config/Cursor/User/tasks.json": HOME_TASKS,
+                 ".config/Cursor/User/settings.json": HOME_SETTINGS}
+        with TempRepo(files) as home:
+            result = scan_home(str(home), ignore=("TG100",))
+        self.assertEqual([f.rule_id for f in result.findings], ["TG102"])
+        self.assertEqual(result.files_scanned, 2)
+
+    def test_real_cli_home_reads_only_the_supplied_fake_home(self):
+        files = {".config/Cursor/User/tasks.json": HOME_TASKS,
+                 ".config/Cursor/User/settings.json": HOME_SETTINGS}
+        with TempRepo(files) as home:
+            out = io.StringIO()
+            with mock.patch("trustgate.scanner.Path.home", return_value=home), \
+                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = main(["scan", "--home", "-f", "json"])
+        doc = json.loads(out.getvalue())
+        self.assertEqual(code, 1)
+        self.assertEqual({f["rule"] for f in doc["findings"]}, {"TG100", "TG102"})
+        self.assertEqual(doc["errors"], [])
+
+    def test_scanned_commands_are_never_executed(self):
+        with mock.patch("subprocess.run", side_effect=AssertionError("execution forbidden")), \
+             mock.patch("subprocess.Popen", side_effect=AssertionError("execution forbidden")), \
+             mock.patch("os.system", side_effect=AssertionError("execution forbidden")):
+            self._editor(".config/Cursor/User")
 
 
 if __name__ == "__main__":
