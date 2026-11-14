@@ -8,6 +8,9 @@ All notable changes are documented here. The format follows
 
 ### Added
 
+- `trustgate ioc`: checks lockfiles, installed packages and files against indicators from known
+  supply-chain compromises (axios, LiteLLM, Shai-Hulud, Nx, chalk / debug and more). Offline,
+  text or JSON output, `--host` for artefacts left on the machine. See [docs/ioc.md](docs/ioc.md).
 - `trustgate rules TG100` explains a single rule: name, default severity, fix and a link to the docs.
   Lower-case ids work too; an unknown id exits with code 2.
 - `test_every_rule_has_a_test` in `tests/test_meta.py`: verifies that every registered rule in `RULES` is covered by at least one test. (#11)
