@@ -115,6 +115,25 @@ VS Code Insiders and Cursor on Linux, macOS and Windows.
 inside the home directory are honored. Anything listed there runs for *every*
 project you open.
 
+### Am I affected by a known attack?
+
+`trustgate ioc` compares your lockfiles, installed packages and files with the indicators
+published for known supply-chain compromises (axios, LiteLLM, Shai-Hulud, Nx, chalk / debug
+and others):
+
+```sh
+trustgate ioc                  # check the current project
+trustgate ioc ~/src            # check every project under a folder
+trustgate ioc --host           # look for artefacts known malware leaves on this machine
+trustgate ioc --list           # campaigns this version knows about
+```
+
+It reads `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `requirements*.txt`,
+`poetry.lock`, `uv.lock`, `pdm.lock` and `Pipfile.lock`, plus `node_modules` and installed
+Python packages. Exit code 1 means an indicator was found. A clean result means nothing on
+the published list matched; it is not proof that a machine is clean. Details, the campaign
+list and how to add one: [docs/ioc.md](docs/ioc.md).
+
 ## What it checks
 
 | Area | Files | What is flagged |
