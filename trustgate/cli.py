@@ -7,12 +7,14 @@ import os
 import sys
 from typing import List, Optional
 
-from . import __version__, baseline
+from . import __version__, baseline, hit
+from .campaigns import CAMPAIGNS, Index, load_file
 from .models import RULES, Severity
 from .report import to_github, to_json, to_markdown, to_sarif, to_text
 from .scanner import ScanResult, scan, scan_home
 
 FORMATS = ("text", "json", "sarif", "github", "markdown")
+HIT_FORMATS = ("text", "json", "sarif")
 
 EXIT_OK, EXIT_FINDINGS, EXIT_USAGE = 0, 1, 2
 
@@ -56,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("rules", help="list every rule, or explain one")
     r.add_argument("rule", nargs="?", metavar="RULE", help="rule id to explain, e.g. TG100")
+
+    h = sub.add_parser("hit", help="check lockfiles and installed packages against known supply-chain attacks")
+    h.add_argument("path", nargs="?", default=".", help="directory to check")
+    h.add_argument("--home", action="store_true",
+                   help="look in your home directory for files that known attacks leave behind")
+    _common(h)
+    h.add_argument("--ioc", action="append", default=[], metavar="FILE",
+                   help="add campaigns from a JSON file, see docs/campaigns.md (repeatable)")
+    h.add_argument("--list", action="store_true", help="list the campaigns trustgate knows and exit")
+    h.add_argument("-f", "--format", choices=HIT_FORMATS, default="text", help="text (default), json or sarif")
+    h.add_argument("-o", "--output", help="write the report to a file instead of stdout")
+    h.add_argument("--fail-on", type=_severity, default=Severity.HIGH, metavar="LEVEL",
+                   help="exit 1 if any finding is at or above LEVEL (default: high)")
+    h.add_argument("--no-color", action="store_true", help="disable ANSI colours")
     return parser
 
 
@@ -102,6 +118,48 @@ def _annotation_prefix(result: ScanResult) -> str:
     return "" if rel == "." or rel.startswith("..") else rel.replace(os.sep, "/")
 
 
+def _hit(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """trustgate hit: compare lockfiles and installed packages with known supply-chain attacks."""
+    unknown = [r for r in args.ignore if r.upper() not in RULES]
+    if unknown:
+        parser.error(f"unknown rule id(s): {', '.join(unknown)}")
+    try:
+        extra = [campaign for path in args.ioc for campaign in load_file(path)]
+    except ValueError as exc:
+        print(f"trustgate: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    index = Index(CAMPAIGNS + tuple(extra))
+    result = None
+    if not args.list:
+        try:
+            if args.home:
+                result = hit.check_home(ignore=args.ignore, index=index)
+            else:
+                result = hit.check(args.path, include_deps=args.deps, exclude=args.exclude,
+                                   ignore=args.ignore, index=index)
+        except NotADirectoryError as exc:
+            print(f"trustgate: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+    try:
+        if result is None:
+            report = hit.listing(index)
+        elif args.format == "json":
+            report = to_json(result)
+        elif args.format == "sarif":
+            report = to_sarif(result)
+        else:
+            color = (not args.no_color and not args.output and sys.stdout.isatty()
+                     and "NO_COLOR" not in os.environ)
+            report = hit.to_text(result, index, color=color, home=args.home)
+        _write(args.output, report)
+    except OSError as exc:
+        print(f"trustgate: cannot write {args.output}: {exc.strerror or exc}", file=sys.stderr)
+        return EXIT_USAGE
+    if result is None:
+        return EXIT_OK
+    return EXIT_FINDINGS if result.at_least(args.fail_on) else EXIT_OK
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -113,6 +171,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             parser.error(f"unknown rule id: {args.rule}")
         return EXIT_OK
+    if args.command == "hit":
+        return _hit(args, parser)
     if args.command not in ("scan", "baseline"):
         parser.print_help()
         return EXIT_USAGE
