@@ -33,6 +33,13 @@ Every finding has a rule id, a default severity and a fix. Some findings are rai
 | TG701 | `workflow-untrusted-exec` | high | A workflow interpolates attacker-controlled event text directly into a shell step. | Pass the value through an environment variable and never execute it. |
 | TG800 | `gradle-wrapper-distribution` | medium | The Gradle wrapper downloads Gradle from a non-official location; IDEs run it when the project is imported. | Point distributionUrl at https://services.gradle.org/distributions/ and add distributionSha256Sum. |
 | TG801 | `rust-build-script` | low | Cargo and rust-analyzer execute build scripts when the project is compiled or opened. | Review the build script before opening the project in an editor with rust-analyzer enabled. |
+| TG900 | `compromised-package-version` | critical | A lockfile or an installed package resolves to a release published by a known supply-chain attack. | Treat the machine or runner that installed it as compromised: rotate every token it could read, then pin a clean version and reinstall with install scripts disabled. |
+| TG901 | `campaign-artifact` | high | A file or folder has the name of one that a known supply-chain attack drops to run or persist. | Read it without running it. If you did not create it, remove it, rotate your tokens and follow the linked write-up to look for other traces. |
+
+## Known-attack rules
+
+TG900 and TG901 are reported by `trustgate hit`, not by `trustgate scan`. They compare lockfiles,
+installed packages and file names with the attacks listed in [campaigns.md](campaigns.md).
 
 ## Severity adjustments
 
