@@ -7,7 +7,7 @@ import os
 import sys
 from typing import List, Optional
 
-from . import __version__, baseline
+from . import __version__, baseline, ioc
 from .models import RULES, Severity
 from .report import to_github, to_json, to_markdown, to_sarif, to_text
 from .scanner import ScanResult, scan, scan_home
@@ -56,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("rules", help="list every rule, or explain one")
     r.add_argument("rule", nargs="?", metavar="RULE", help="rule id to explain, e.g. TG100")
+    ioc.add_parser(sub)
     return parser
 
 
@@ -105,6 +106,8 @@ def _annotation_prefix(result: ScanResult) -> str:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "ioc":
+        return ioc.run(args)
     if args.command == "rules":
         if args.rule is None:
             sys.stdout.write(_rules())
