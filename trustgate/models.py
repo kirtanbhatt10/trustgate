@@ -134,6 +134,14 @@ _rule("TG800", "gradle-wrapper-distribution", Severity.MEDIUM,
 _rule("TG801", "rust-build-script", Severity.LOW,
       "Cargo and rust-analyzer execute build scripts when the project is compiled or opened.",
       "Review the build script before opening the project in an editor with rust-analyzer enabled.")
+_rule("TG900", "compromised-package-version", Severity.CRITICAL,
+      "A lockfile or an installed package resolves to a release published by a known supply-chain attack.",
+      "Treat the machine or runner that installed it as compromised: rotate every token it could read, "
+      "then pin a clean version and reinstall with install scripts disabled.")
+_rule("TG901", "campaign-artifact", Severity.HIGH,
+      "A file or folder has the name of one that a known supply-chain attack drops to run or persist.",
+      "Read it without running it. If you did not create it, remove it, rotate your tokens and follow "
+      "the linked write-up to look for other traces.")
 
 
 @dataclass
