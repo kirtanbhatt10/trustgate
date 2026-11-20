@@ -251,6 +251,32 @@ trustgate covers one question: *what runs automatically?* For neighbouring probl
 - [runnerguard](https://github.com/kirtanbhatt10/runnerguard): full GitHub Actions workflow linting
 - [promptshield](https://github.com/kirtanbhatt10/promptshield): runtime prompt-injection guardrails for LLM apps
 
+## A bedtime story for repositories
+
+<details>
+<summary>🚪 Do not expand this section. (It's fine. trustgate already checked it.)</summary>
+
+Once upon a time, a developer cloned a repository called `cool-project`. It had 4,000 stars,
+a friendly README and a logo of a cat in sunglasses.
+
+They opened it in their editor. Before they could blink, a VS Code task ran `prepare.cjs`, a
+`postinstall` script phoned home, an MCP server called `docs-helper` started itself, and 55
+invisible characters in `CLAUDE.md` politely asked their AI agent to `curl | sh`.
+
+The cat in sunglasses was not, in fact, cool.
+
+In a parallel universe, the same developer typed `trustgate scan cool-project` first. Seven
+findings, zero surprises, and they lived happily ever after with their SSH keys still on
+their own laptop.
+
+> *Clone, but do not run.*<br>
+> *Hidden tasks wake on open;*<br>
+> *trustgate hears them first.*
+
+**The end.** Run trustgate before bedtime.
+
+</details>
+
 ## Contributing
 
 trustgate is small, has no dependencies and every check lives in one short file, which makes
